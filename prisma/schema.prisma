@@ -1,0 +1,329 @@
+// =====================================================
+// DigiTag — Prisma schema
+// =====================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -------------------------
+// Enums
+// -------------------------
+enum UserRole {
+  CREATOR
+  FREELANCER
+  BRAND
+  AGENCY
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum CollaborationType {
+  PAID
+  UNPAID
+}
+
+enum OtpPurpose {
+  LOGIN
+  VERIFICATION
+}
+
+enum CollaborationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
+enum ExperienceLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum FreelancerAvailability {
+  AVAILABLE
+  BUSY
+  NOT_AVAILABLE
+}
+
+// -------------------------
+// Category master (reusable across roles)
+// -------------------------
+model Category {
+  id              String     @id @default(uuid())
+  name            String     @unique
+  slug            String     @unique
+  description     String?
+  applicableRoles UserRole[] @default([])
+  isActive        Boolean    @default(true)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  users              User[]
+  creatorProfiles    CreatorProfile[]
+  freelancerProfiles FreelancerProfile[]
+
+  @@index([isActive])
+}
+
+// -------------------------
+// Base auth/user table
+// -------------------------
+model User {
+  id                 String     @id @default(uuid())
+  mobileNumber       String     @unique
+  countryCode        String     @default("+91")
+  role               UserRole
+  categoryId         String?
+  isVerified         Boolean    @default(false)
+  isProfileCompleted Boolean    @default(false)
+  status             UserStatus @default(ACTIVE)
+  lastLoginAt        DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  category          Category?          @relation(fields: [categoryId], references: [id])
+  creatorProfile    CreatorProfile?
+  freelancerProfile FreelancerProfile?
+  posts             Post[]
+  refreshTokens     RefreshToken[]
+  otps              Otp[]
+
+  sentCollabs     Collaboration[] @relation("SentCollabs")
+  receivedCollabs Collaboration[] @relation("ReceivedCollabs")
+
+  conversationsA Conversation[] @relation("ParticipantA")
+  conversationsB Conversation[] @relation("ParticipantB")
+  sentMessages   Message[]      @relation("MessageSender")
+
+  following Follow[] @relation("FollowFollower")
+  followers Follow[] @relation("FollowFollowing")
+
+  @@index([role])
+  @@index([mobileNumber])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// -------------------------
+// Creator profile — content creators, influencers, brand collaborators
+// -------------------------
+model CreatorProfile {
+  id                   String            @id @default(uuid())
+  userId               String            @unique
+  profilePicture       String?
+  profilePictureKey    String?
+  name                 String?
+  email                String?           @unique
+  categoryId           String?
+  language             String?
+  bio                  String?
+  location             String?
+  // Social media presence
+  instagramHandle      String?
+  instagramFollowers   Int?
+  youtubeHandle        String?
+  youtubeFollowers     Int?
+  twitterHandle        String?
+  twitterFollowers     Int?
+  snapchatHandle       String?
+  // Collaboration preferences
+  preferredCollabType  CollaborationType @default(UNPAID)
+  isAvailableForCollab Boolean           @default(true)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
+  @@index([isAvailableForCollab])
+}
+
+// -------------------------
+// Freelancer profile — video editors, designers, photographers, writers
+// -------------------------
+model FreelancerProfile {
+  id                String                 @id @default(uuid())
+  userId            String                 @unique
+  profilePicture    String?
+  profilePictureKey String?
+  name              String?
+  email             String?                @unique
+  categoryId        String?
+  language          String?
+  bio               String?
+  location          String?
+  // Freelancer-specific
+  skills            String[]               @default([])
+  hourlyRate        Decimal?               @db.Decimal(10, 2)
+  experienceLevel   ExperienceLevel?
+  portfolioUrl      String?
+  availability      FreelancerAvailability @default(AVAILABLE)
+  servicesOffered   String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
+  @@index([availability])
+}
+
+// -------------------------
+// Posts
+// -------------------------
+model Post {
+  id                String            @id @default(uuid())
+  userId            String
+  role              UserRole
+  description       String
+  imageUrl          String?
+  imageKey          String?
+  location          String?
+  collaborationType CollaborationType @default(UNPAID)
+  isActive          Boolean           @default(true)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collaborations Collaboration[]
+
+  @@index([role])
+  @@index([userId])
+  @@index([isActive])
+  @@index([createdAt])
+  @@index([role, isActive, createdAt])
+}
+
+// -------------------------
+// OTP storage (hashed)
+// -------------------------
+model Otp {
+  id           String     @id @default(uuid())
+  userId       String?
+  mobileNumber String
+  codeHash     String
+  purpose      OtpPurpose @default(LOGIN)
+  attempts     Int        @default(0)
+  isUsed       Boolean    @default(false)
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([mobileNumber])
+  @@index([expiresAt])
+}
+
+// -------------------------
+// Refresh tokens
+// -------------------------
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// -------------------------
+// Collaboration requests
+// -------------------------
+model Collaboration {
+  id          String              @id @default(uuid())
+  senderId    String
+  receiverId  String
+  postId      String?
+  message     String?
+  status      CollaborationStatus @default(PENDING)
+  respondedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  sender       User          @relation("SentCollabs", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver     User          @relation("ReceivedCollabs", fields: [receiverId], references: [id], onDelete: Cascade)
+  post         Post?         @relation(fields: [postId], references: [id], onDelete: SetNull)
+  conversation Conversation?
+
+  @@unique([senderId, receiverId, postId])
+  @@index([receiverId, status])
+  @@index([senderId, status])
+  @@index([createdAt])
+}
+
+// -------------------------
+// Conversations + messages
+// -------------------------
+model Conversation {
+  id              String    @id @default(uuid())
+  collaborationId String?   @unique
+  participantAId  String
+  participantBId  String
+  lastMessageAt   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  collaboration Collaboration? @relation(fields: [collaborationId], references: [id], onDelete: SetNull)
+  participantA  User           @relation("ParticipantA", fields: [participantAId], references: [id], onDelete: Cascade)
+  participantB  User           @relation("ParticipantB", fields: [participantBId], references: [id], onDelete: Cascade)
+  messages      Message[]
+
+  @@unique([participantAId, participantBId])
+  @@index([lastMessageAt])
+  @@index([participantAId])
+  @@index([participantBId])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderId       String
+  content        String
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+// -------------------------
+// Follow graph
+// -------------------------
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("FollowFollower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("FollowFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}

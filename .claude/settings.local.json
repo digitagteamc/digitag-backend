@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where winget *)",
+      "Bash(where choco *)",
+      "Bash(where scoop *)",
+      "Bash(curl -s -w \"\\\\n[status: %{http_code}]\\\\n\" http://localhost:5000/)",
+      "Bash(curl -s -w \"\\\\n[status: %{http_code}]\\\\n\" http://localhost:5000/api/v1/health)",
+      "Bash(curl -s -w \"\\\\n[status: %{http_code}]\\\\n\" http://localhost:5000/api/v1/categories)",
+      "Bash(curl -s http://localhost:5000/api/v1/auth/me -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4NzFiMzNhYi1iZjNhLTQzNDQtYTQ0ZS1hNmQ4YWZlYmJlN2MiLCJyb2xlIjoiQ1JFQVRPUiIsInR5cGUiOiJhY2Nlc3MiLCJpYXQiOjE3NzYzODU5ODgsImV4cCI6MTc3NjM4Njg4OH0.U3ivUp51k9iWr7D6I0WKN03r1mUNFBeJyL4E2AFMpIM')",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{console.log\\(JSON.stringify\\(JSON.parse\\(d\\),null,2\\)\\)}\\)\")",
+      "Bash(PGPASSWORD=postgres \"/c/Program Files/PostgreSQL/17/bin/psql.exe\" -U postgres -h localhost -d digitag -c \"\\\\dt\")",
+      "Bash(PGPASSWORD=postgres \"/c/Program Files/PostgreSQL/17/bin/psql.exe\" -U postgres -h localhost -d digitag -c \"SELECT 'Category' AS table, COUNT\\(*\\) FROM \\\\\"Category\\\\\" UNION ALL SELECT 'User', COUNT\\(*\\) FROM \\\\\"User\\\\\" UNION ALL SELECT 'CreatorProfile', COUNT\\(*\\) FROM \\\\\"CreatorProfile\\\\\" UNION ALL SELECT 'FreelancerProfile', COUNT\\(*\\) FROM \\\\\"FreelancerProfile\\\\\" UNION ALL SELECT 'Post', COUNT\\(*\\) FROM \\\\\"Post\\\\\" UNION ALL SELECT 'Otp', COUNT\\(*\\) FROM \\\\\"Otp\\\\\" UNION ALL SELECT 'RefreshToken', COUNT\\(*\\) FROM \\\\\"RefreshToken\\\\\";\")",
+      "Bash(PGPASSWORD=postgres \"/c/Program Files/PostgreSQL/17/bin/psql.exe\" -U postgres -h localhost -d digitag -c \"SELECT id, \\\\\"mobileNumber\\\\\", role, \\\\\"isVerified\\\\\", \\\\\"isProfileCompleted\\\\\", status FROM \\\\\"User\\\\\";\")",
+      "Bash(PGPASSWORD=postgres \"/c/Program Files/PostgreSQL/17/bin/psql.exe\" -U postgres -h localhost -d digitag -c \"SELECT id, name, email, location FROM \\\\\"CreatorProfile\\\\\";\")",
+      "Bash(PGPASSWORD=postgres \"/c/Program Files/PostgreSQL/17/bin/psql.exe\" -U postgres -h localhost -d digitag -c \"SELECT id, role, description, \\\\\"collaborationType\\\\\", \\\\\"isActive\\\\\" FROM \\\\\"Post\\\\\";\")"
+    ]
+  }
+}
