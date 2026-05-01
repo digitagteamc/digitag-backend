@@ -66,6 +66,16 @@ const env = {
   },
 
   LOG_LEVEL: optional('LOG_LEVEL', 'info'),
+
+  // Instagram DM Verification
+  INSTAGRAM_VERIFY_TOKEN: optional('INSTAGRAM_VERIFY_TOKEN', 'digitag_ig_verify_token'),
+  INSTAGRAM_APP_SECRET: optional('INSTAGRAM_APP_SECRET'),
+  INSTAGRAM_ACCESS_TOKEN: optional('INSTAGRAM_ACCESS_TOKEN'),
+  DIGITAG_INSTAGRAM_USERNAME: optional('DIGITAG_INSTAGRAM_USERNAME', 'digitag.official'),
+
+  // Agora
+  AGORA_APP_ID: optional('AGORA_APP_ID'),
+  AGORA_APP_CERTIFICATE: optional('AGORA_APP_CERTIFICATE'),
 };
 
 env.isProduction = env.NODE_ENV === 'production';

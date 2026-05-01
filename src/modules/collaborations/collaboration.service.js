@@ -1,5 +1,6 @@
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
+const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
 
 const userInclude = {
   select: {
@@ -47,13 +48,18 @@ function shapeCollab(collab) {
   };
 }
 
-async function createCollaboration(senderId, { receiverId, postId = null, message = null }) {
+async function createCollaboration(senderId, { receiverId, postId = null, message = null }, senderRole) {
   if (senderId === receiverId) {
     throw ApiError.badRequest('You cannot send a collaboration request to yourself');
   }
 
   const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
   if (!receiver) throw ApiError.notFound('Recipient user not found');
+
+  const allowedReceiverRoles = OPPOSITE_FEED_ROLE[senderRole] || [];
+  if (!allowedReceiverRoles.includes(receiver.role)) {
+    throw ApiError.forbidden('You can only collaborate with users of a different role');
+  }
 
   if (postId) {
     const post = await prisma.post.findUnique({ where: { id: postId } });

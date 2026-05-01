@@ -4,7 +4,7 @@ const STATUS = require('../../constants/statusCodes');
 const service = require('./follow.service');
 
 const follow = asyncHandler(async (req, res) => {
-  const data = await service.follow(req.user.id, req.params.userId);
+  const data = await service.follow(req.user.id, req.params.userId, req.user.role);
   return success(res, { statusCode: STATUS.CREATED, message: 'Now following', data });
 });
 

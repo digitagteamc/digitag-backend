@@ -4,7 +4,7 @@ const STATUS = require('../../constants/statusCodes');
 const service = require('./collaboration.service');
 
 const create = asyncHandler(async (req, res) => {
-  const data = await service.createCollaboration(req.user.id, req.body);
+  const data = await service.createCollaboration(req.user.id, req.body, req.user.role);
   return success(res, { statusCode: STATUS.CREATED, message: 'Collaboration request sent', data });
 });
 

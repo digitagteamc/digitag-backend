@@ -35,12 +35,15 @@ function buildPostInclude() {
   };
 }
 
-function shapeOwner(user) {
+function shapeOwner(user, postRole) {
   if (!user) return null;
-  const profile = user.role === ROLES.CREATOR ? user.creatorProfile : user.freelancerProfile;
+  // Use the role stored on the post (what the user was when they created it),
+  // not the user's current role, to pick the right profile and label.
+  const role = postRole || user.role;
+  const profile = role === ROLES.CREATOR ? user.creatorProfile : user.freelancerProfile;
   return {
     id: user.id,
-    role: user.role,
+    role,
     name: profile ? profile.name : null,
     profilePicture: profile ? profile.profilePicture : null,
     location: profile ? profile.location : null,
@@ -50,7 +53,7 @@ function shapeOwner(user) {
 function shapePost(post) {
   if (!post) return post;
   const { user, ...rest } = post;
-  return { ...rest, owner: shapeOwner(user) };
+  return { ...rest, owner: shapeOwner(user, post.role) };
 }
 
 async function createPost(user, data) {

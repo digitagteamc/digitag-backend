@@ -1,10 +1,15 @@
 const { prisma } = require('../../config/db');
+const { OPPOSITE_FEED_ROLE, ROLES } = require('../../constants/roles');
 
-async function searchProfiles(q, limit = 20) {
+async function searchProfiles(user, q, limit = 20) {
     const query = q.trim();
+    const targetRoles = OPPOSITE_FEED_ROLE[user.role] || [];
+
+    const includeCreator = targetRoles.includes(ROLES.CREATOR);
+    const includeFreelancer = targetRoles.includes(ROLES.FREELANCER);
 
     const [creators, freelancers] = await Promise.all([
-        prisma.creatorProfile.findMany({
+        includeCreator ? prisma.creatorProfile.findMany({
             where: {
                 name: { contains: query, mode: 'insensitive' },
                 user: { status: 'ACTIVE' },
@@ -19,8 +24,8 @@ async function searchProfiles(q, limit = 20) {
             },
             orderBy: { name: 'asc' },
             take: limit,
-        }),
-        prisma.freelancerProfile.findMany({
+        }) : Promise.resolve([]),
+        includeFreelancer ? prisma.freelancerProfile.findMany({
             where: {
                 name: { contains: query, mode: 'insensitive' },
                 user: { status: 'ACTIVE' },
@@ -35,7 +40,7 @@ async function searchProfiles(q, limit = 20) {
             },
             orderBy: { name: 'asc' },
             take: limit,
-        }),
+        }) : Promise.resolve([]),
     ]);
 
     const results = [

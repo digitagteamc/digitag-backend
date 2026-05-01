@@ -12,6 +12,8 @@ const collaborationRoutes = require('../modules/collaborations/collaboration.rou
 const conversationRoutes = require('../modules/conversations/conversation.route');
 const followRoutes = require('../modules/follows/follow.route');
 const searchRoutes = require('../modules/search/search.route');
+const instagramRoutes = require('../modules/instagram/instagram.route');
+const callRoutes = require('../modules/calls/calls.route');
 
 const router = Router();
 
@@ -31,5 +33,7 @@ router.use('/collaborations', collaborationRoutes);
 router.use('/conversations', conversationRoutes);
 router.use('/follows', followRoutes);
 router.use('/search', searchRoutes);
+router.use('/instagram', instagramRoutes);
+router.use('/calls', callRoutes);
 
 module.exports = router;

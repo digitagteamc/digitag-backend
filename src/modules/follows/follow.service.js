@@ -25,10 +25,15 @@ function shapeUser(u) {
   };
 }
 
-async function follow(followerId, followingId) {
+async function follow(followerId, followingId, followerRole) {
   if (followerId === followingId) throw ApiError.badRequest('Cannot follow yourself');
   const other = await prisma.user.findUnique({ where: { id: followingId } });
   if (!other) throw ApiError.notFound('User not found');
+
+  const allowedRoles = OPPOSITE_FEED_ROLE[followerRole] || [];
+  if (!allowedRoles.includes(other.role)) {
+    throw ApiError.forbidden('You can only follow users of a different role');
+  }
 
   const existing = await prisma.follow.findUnique({
     where: { followerId_followingId: { followerId, followingId } },

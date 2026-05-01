@@ -31,6 +31,7 @@ router.put(
 router.get(
   '/:id',
   authenticate,
+  authorize(ROLES.CREATOR),
   validateRequest({ params: idParam }),
   controller.getById,
 );
