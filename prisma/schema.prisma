@@ -131,6 +131,7 @@ model User {
   instagramVerifications InstagramVerification[]
   callerCalls            Call[]                  @relation("CallCaller")
   calleeCalls            Call[]                  @relation("CallCallee")
+  reports                Report[]                @relation("ReportReporter")
 
   @@index([role])
   @@index([mobileNumber])
@@ -237,6 +238,7 @@ model Post {
   location          String?
   collaborationType CollaborationType @default(UNPAID)
   isActive          Boolean           @default(true)
+  isHidden          Boolean           @default(false)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -343,6 +345,10 @@ model Message {
   senderId       String
   content        String
   isRead         Boolean  @default(false)
+  imageUrl       String?
+  isDeleted      Boolean  @default(false)
+  isEdited       Boolean  @default(false)
+  reactions      Json?
   createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -411,4 +417,72 @@ model Call {
   @@index([callerId])
   @@index([calleeId])
   @@index([status])
+}
+
+// -------------------------
+// Admin users (email + password, separate from OTP users)
+// -------------------------
+model AdminUser {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  activityLogs AdminActivityLog[]
+
+  @@index([email])
+}
+
+// -------------------------
+// Admin audit log
+// -------------------------
+model AdminActivityLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  adminName String
+  action    String
+  target    String   @default("—")
+  createdAt DateTime @default(now())
+
+  admin AdminUser @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+// -------------------------
+// User/post reports
+// -------------------------
+enum ReportType {
+  USER
+  POST
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  DISMISSED
+}
+
+model Report {
+  id         String       @id @default(uuid())
+  type       ReportType
+  targetId   String
+  targetName String
+  reason     String
+  reportedBy String
+  status     ReportStatus @default(PENDING)
+  reviewedAt DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  reporter User @relation("ReportReporter", fields: [reportedBy], references: [id], onDelete: Cascade)
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
 }

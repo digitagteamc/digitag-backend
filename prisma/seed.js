@@ -4,6 +4,7 @@
 // =====================================================
 
 const { PrismaClient } = require("@prisma/client");
+const bcrypt = require("bcryptjs");
 
 const prisma = new PrismaClient();
 
@@ -370,7 +371,24 @@ async function main() {
       }
 
       // --------------------------------------------------
-      // 5. Final summary
+      // 5. Seed default admin user
+      // --------------------------------------------------
+      console.log("\nSeeding admin user...");
+      const ADMIN_EMAIL = process.env.ADMIN_SEED_EMAIL || "admin@digitag.ai";
+      const ADMIN_PASSWORD = process.env.ADMIN_SEED_PASSWORD || "admin123";
+      const existingAdmin = await tx.adminUser.findUnique({ where: { email: ADMIN_EMAIL } });
+      if (existingAdmin) {
+        console.log(`  [admin] ${ADMIN_EMAIL} already exists — skipping.`);
+      } else {
+        const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
+        await tx.adminUser.create({
+          data: { name: "Admin", email: ADMIN_EMAIL, passwordHash },
+        });
+        console.log(`  [admin] Created ${ADMIN_EMAIL} (password: ${ADMIN_PASSWORD})`);
+      }
+
+      // --------------------------------------------------
+      // 6. Final summary
       // --------------------------------------------------
       const [userCount, creatorCount, freelancerCount, postCount, categoryCount] =
         await Promise.all([

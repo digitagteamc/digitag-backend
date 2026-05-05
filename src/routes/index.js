@@ -1,6 +1,7 @@
 const { Router } = require('express');
 
 const authRoutes = require('../modules/auth/auth.route');
+const adminRoutes = require('../modules/admin/admin.route');
 const categoryRoutes = require('../modules/categories/category.route');
 const userRoutes = require('../modules/users/user.route');
 const creatorRoutes = require('../modules/creators/creator.route');
@@ -22,6 +23,7 @@ router.get('/health', (_req, res) => {
 });
 
 router.use('/auth', authRoutes);
+router.use('/admin', adminRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/users', userRoutes);
 router.use('/creators', creatorRoutes);
