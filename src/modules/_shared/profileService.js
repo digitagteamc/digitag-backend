@@ -2,6 +2,7 @@ const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const MESSAGES = require('../../constants/messages');
 const userService = require('../users/user.service');
+const { generateTagId } = require('../../utils/generateTagId');
 
 /**
  * Factory that produces a role-specific profile service.
@@ -31,14 +32,22 @@ function buildProfileService({ model, role }) {
   }
 
   async function createProfile(userId, data) {
-    await ensureUserRole(userId);
+    const user = await ensureUserRole(userId);
 
     const existing = await delegate().findUnique({ where: { userId } });
     if (existing) throw ApiError.conflict(MESSAGES.PROFILE.ALREADY_EXISTS);
 
     if (data.email) await ensureEmailAvailable(userId, data.email);
 
-    const profile = await delegate().create({ data: { ...data, userId } });
+    const tagId = await generateTagId({
+      location: data.location,
+      language: data.language,
+      mobileNumber: user.mobileNumber,
+      role,
+      model,
+    });
+
+    const profile = await delegate().create({ data: { ...data, userId, tagId } });
 
     await userService.recomputeProfileCompletion(userId);
     return profile;

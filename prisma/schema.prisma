@@ -168,6 +168,7 @@ model CreatorProfile {
   facebookFollowers    Int?
   portfolioUrl         String?
   experienceLevel      String?
+  tagId                String?           @unique
   // Collaboration preferences
   preferredCollabType  CollaborationType @default(UNPAID)
   isAvailableForCollab Boolean           @default(true)
@@ -215,6 +216,7 @@ model FreelancerProfile {
   snapchatFollowers    Int?
   facebookHandle       String?
   facebookFollowers    Int?
+  tagId             String?                @unique
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
 
