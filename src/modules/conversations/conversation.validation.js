@@ -2,6 +2,11 @@ const Joi = require('joi');
 const { uuid } = require('../../validations/common.validation');
 
 const sendMessageSchema = Joi.object({
+  content: Joi.string().trim().min(1).max(4000).optional().allow(''),
+  imageUrl: Joi.string().uri().max(2000).optional(),
+}).or('content', 'imageUrl');
+
+const editMessageSchema = Joi.object({
   content: Joi.string().trim().min(1).max(4000).required(),
 });
 
@@ -14,4 +19,4 @@ const listMessagesQuery = Joi.object({
   limit: Joi.number().integer().min(1).max(100).optional(),
 }).unknown(true);
 
-module.exports = { sendMessageSchema, openWithSchema, listMessagesQuery };
+module.exports = { sendMessageSchema, editMessageSchema, openWithSchema, listMessagesQuery };

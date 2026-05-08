@@ -30,7 +30,7 @@ function buildKey(prefix, originalName) {
   return `${safePrefix}/${Date.now()}-${uuidv4()}${ext}`;
 }
 
-function createS3Storage(prefix = 'uploads') {
+function createS3Storage(defaultPrefix = 'uploads') {
   return multerS3({
     s3: getS3Client(),
     bucket: env.AWS.bucket,
@@ -38,8 +38,9 @@ function createS3Storage(prefix = 'uploads') {
     metadata(req, _file, cb) {
       cb(null, { userId: (req.user && req.user.id) || 'anonymous' });
     },
-    key(_req, file, cb) {
-      cb(null, buildKey(prefix, file.originalname));
+    key(req, file, cb) {
+      const folder = req.query.folder || defaultPrefix;
+      cb(null, buildKey(folder, file.originalname));
     },
   });
 }

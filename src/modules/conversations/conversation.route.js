@@ -1,10 +1,13 @@
 const { Router } = require('express');
+const Joi = require('joi');
 
 const controller = require('./conversation.controller');
 const schemas = require('./conversation.validation');
 const { authenticate } = require('../../middlewares/authMiddleware');
 const { validateRequest } = require('../../middlewares/validateMiddleware');
-const { idParam } = require('../../validations/common.validation');
+const { idParam, uuid } = require('../../validations/common.validation');
+
+const msgParam = Joi.object({ id: uuid.required(), msgId: uuid.required() });
 
 const router = Router();
 
@@ -22,6 +25,12 @@ router.post(
   authenticate,
   validateRequest({ params: idParam, body: schemas.sendMessageSchema }),
   controller.sendMessage,
+);
+router.patch(
+  '/:id/messages/:msgId',
+  authenticate,
+  validateRequest({ params: msgParam, body: schemas.editMessageSchema }),
+  controller.editMessage,
 );
 
 module.exports = router;

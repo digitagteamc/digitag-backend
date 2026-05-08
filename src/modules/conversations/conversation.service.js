@@ -6,6 +6,7 @@ const userInclude = {
     id: true,
     role: true,
     mobileNumber: true,
+    lastLoginAt: true,
     creatorProfile: { select: { name: true, profilePicture: true, location: true } },
     freelancerProfile: { select: { name: true, profilePicture: true, location: true } },
   },
@@ -26,6 +27,7 @@ function shapeParticipant(user) {
     name: profile ? profile.name : null,
     profilePicture: profile ? profile.profilePicture : null,
     location: profile ? profile.location : null,
+    lastLoginAt: user.lastLoginAt || null,
   };
 }
 
@@ -115,7 +117,7 @@ async function listMessages(userId, conversationId, { cursor, limit = 50 } = {})
   };
 }
 
-async function sendMessage(userId, conversationId, content) {
+async function sendMessage(userId, conversationId, content, imageUrl = null) {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: { collaboration: true },
@@ -128,12 +130,12 @@ async function sendMessage(userId, conversationId, content) {
     throw ApiError.forbidden('Messaging is unlocked only after the collaboration is accepted');
   }
   const trimmed = String(content || '').trim();
-  if (!trimmed) throw ApiError.badRequest('Message content is required');
+  if (!trimmed && !imageUrl) throw ApiError.badRequest('Message content or image is required');
 
   const now = new Date();
   const [message] = await prisma.$transaction([
     prisma.message.create({
-      data: { conversationId, senderId: userId, content: trimmed },
+      data: { conversationId, senderId: userId, content: trimmed || '', imageUrl: imageUrl || null },
     }),
     prisma.conversation.update({
       where: { id: conversationId },
@@ -142,6 +144,19 @@ async function sendMessage(userId, conversationId, content) {
   ]);
 
   return message;
+}
+
+async function editMessage(userId, conversationId, messageId, content) {
+  const msg = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!msg) throw ApiError.notFound('Message not found');
+  if (msg.senderId !== userId) throw ApiError.forbidden('Cannot edit another user\'s message');
+  if (msg.conversationId !== conversationId) throw ApiError.forbidden('Message not in this conversation');
+  const trimmed = String(content || '').trim();
+  if (!trimmed) throw ApiError.badRequest('Edited content cannot be empty');
+  return prisma.message.update({
+    where: { id: messageId },
+    data: { content: trimmed, isEdited: true },
+  });
 }
 
 /** Open-or-create a conversation with another user — only if an accepted
@@ -199,5 +214,6 @@ module.exports = {
   getConversationById,
   listMessages,
   sendMessage,
+  editMessage,
   openConversationWith,
 };
