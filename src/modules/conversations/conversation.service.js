@@ -1,11 +1,25 @@
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
+const admin = require('../../config/firebase');
+const logger = require('../../utils/logger');
+
+async function sendFcm(fcmToken, data, notification = null) {
+  if (!fcmToken) return;
+  try {
+    const msg = { token: fcmToken, data, android: { priority: 'high' } };
+    if (notification) msg.notification = notification;
+    await admin.messaging().send(msg);
+  } catch (err) {
+    logger.error('[FCM] send failed', { err: err.message });
+  }
+}
 
 const userInclude = {
   select: {
     id: true,
     role: true,
     mobileNumber: true,
+    fcmToken: true,
     lastLoginAt: true,
     creatorProfile: { select: { name: true, profilePicture: true, location: true } },
     freelancerProfile: { select: { name: true, profilePicture: true, location: true } },
@@ -142,6 +156,25 @@ async function sendMessage(userId, conversationId, content, imageUrl = null) {
       data: { lastMessageAt: now },
     }),
   ]);
+
+  // Send push notification to the recipient.
+  const otherUserId = conv.participantAId === userId ? conv.participantBId : conv.participantAId;
+  const [senderUser, otherUser] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { creatorProfile: { select: { name: true } }, freelancerProfile: { select: { name: true } } },
+    }),
+    prisma.user.findUnique({
+      where: { id: otherUserId },
+      select: { fcmToken: true },
+    }),
+  ]);
+  const senderName = senderUser?.creatorProfile?.name || senderUser?.freelancerProfile?.name || 'Someone';
+  await sendFcm(
+    otherUser?.fcmToken,
+    { type: 'NEW_MESSAGE', conversationId, messageId: message.id },
+    { title: senderName, body: trimmed || '📷 Image' },
+  );
 
   return message;
 }

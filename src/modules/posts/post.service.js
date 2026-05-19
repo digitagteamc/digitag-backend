@@ -4,6 +4,19 @@ const MESSAGES = require('../../constants/messages');
 const { ROLES } = require('../../constants/roles');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
 const s3UploadService = require('../../services/s3/s3Upload.service');
+const admin = require('../../config/firebase');
+const logger = require('../../utils/logger');
+
+async function sendFcm(fcmToken, data, notification = null) {
+  if (!fcmToken) return;
+  try {
+    const msg = { token: fcmToken, data, android: { priority: 'high' } };
+    if (notification) msg.notification = notification;
+    await admin.messaging().send(msg);
+  } catch (err) {
+    logger.error('[FCM] send failed', { err: err.message });
+  }
+}
 
 function buildPostInclude() {
   return {
@@ -69,7 +82,39 @@ async function createPost(user, data) {
     },
     include: buildPostInclude(),
   });
-  return shapePost(post);
+
+  // Notify accepted-collaboration connections about the new post.
+  const shaped = shapePost(post);
+  const posterName = shaped.owner?.name || 'Someone';
+  const preview = data.description ? data.description.slice(0, 60) : 'Check out my new post';
+  setImmediate(async () => {
+    try {
+      const collabs = await prisma.collaboration.findMany({
+        where: {
+          status: 'ACCEPTED',
+          OR: [{ senderId: user.id }, { receiverId: user.id }],
+        },
+        select: {
+          sender: { select: { id: true, fcmToken: true } },
+          receiver: { select: { id: true, fcmToken: true } },
+        },
+      });
+      await Promise.all(
+        collabs.map((c) => {
+          const other = c.sender.id === user.id ? c.receiver : c.sender;
+          return sendFcm(
+            other.fcmToken,
+            { type: 'NEW_POST', postId: post.id },
+            { title: `${posterName} posted`, body: preview },
+          );
+        }),
+      );
+    } catch (err) {
+      logger.error('[FCM] post notification failed', { err: err.message });
+    }
+  });
+
+  return shaped;
 }
 
 async function updatePost(user, id, data) {

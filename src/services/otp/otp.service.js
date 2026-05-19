@@ -6,10 +6,12 @@ const MESSAGES = require('../../constants/messages');
 const { ApiError } = require('../../utils/apiResponse');
 
 const MockOtpProvider = require('./mockOtp.provider');
+const Msg91OtpProvider = require('./msg91Otp.provider');
 
 function resolveProvider() {
     switch ((env.OTP_PROVIDER || 'mock').toLowerCase()) {
-        // Additional providers (twilio, msg91, firebase) can be plugged in here.
+        case 'msg91':
+            return new Msg91OtpProvider();
         case 'mock':
         default:
             return new MockOtpProvider();
@@ -17,6 +19,12 @@ function resolveProvider() {
 }
 
 const provider = resolveProvider();
+
+// Test phone numbers — bypass real OTP for internal testing.
+// Format: { 'MOBILE_NUMBER': 'FIXED_OTP_CODE' }
+const TEST_NUMBERS = env.TEST_PHONE_NUMBERS
+    ? Object.fromEntries(env.TEST_PHONE_NUMBERS.split(',').map(e => e.trim().split(':')))
+    : {};
 
 async function sendOtp({ mobileNumber, countryCode = '+91', userId = null, purpose = 'LOGIN' }) {
     const cooldownMs = env.OTP_RESEND_COOLDOWN_SECONDS * 1000;
@@ -34,7 +42,8 @@ async function sendOtp({ mobileNumber, countryCode = '+91', userId = null, purpo
         );
     }
 
-    const code = generateNumericOtp(env.OTP_LENGTH);
+    const isTestNumber = Object.prototype.hasOwnProperty.call(TEST_NUMBERS, mobileNumber);
+    const code = isTestNumber ? TEST_NUMBERS[mobileNumber] : generateNumericOtp(env.OTP_LENGTH);
     const codeHash = hashOtp(code);
     const expiresAt = new Date(Date.now() + env.OTP_EXPIRY_MINUTES * 60 * 1000);
 
@@ -48,18 +57,20 @@ async function sendOtp({ mobileNumber, countryCode = '+91', userId = null, purpo
         data: { userId, mobileNumber, codeHash, purpose, expiresAt },
     });
 
-    try {
-        await provider.send({ mobileNumber, countryCode, code, purpose });
-    } catch (err) {
-        logger.error('OTP delivery failed', { err });
-        throw ApiError.internal('Failed to deliver OTP');
+    if (!isTestNumber) {
+        try {
+            await provider.send({ mobileNumber, countryCode, code, purpose });
+        } catch (err) {
+            logger.error('OTP delivery failed', { err });
+            throw ApiError.internal('Failed to deliver OTP');
+        }
+    } else {
+        logger.info('[OTP] Test number — skipping SMS delivery', { mobileNumber });
     }
 
     return {
         otpId: record.id,
         expiresAt,
-        // Only returned in dev; production builds get `undefined` so the UI
-        // can't accidentally display it to end users.
         devCode: env.isProduction ? undefined : code,
     };
 }
