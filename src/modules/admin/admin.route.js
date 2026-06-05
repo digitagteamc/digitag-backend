@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const rateLimit = require('express-rate-limit');
 const controller = require('./admin.controller');
 const { authenticateAdmin } = require('../../middlewares/adminAuthMiddleware');
 const { validateRequest } = require('../../middlewares/validateMiddleware');
@@ -6,9 +7,17 @@ const v = require('./admin.validation');
 
 const router = Router();
 
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many login attempts. Try again later.' },
+});
+
 // ─── Public ───────────────────────────────────────────────────────────────────
 // POST /admin/login
-router.post('/login', validateRequest({ body: v.login }), controller.login);
+router.post('/login', adminLoginLimiter, validateRequest({ body: v.login }), controller.login);
 
 // ─── Protected (admin JWT required for all routes below) ──────────────────────
 router.use(authenticateAdmin);

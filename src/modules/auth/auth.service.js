@@ -251,8 +251,8 @@ async function switchRole(userId, role) {
 
 function sanitizeUser(user) {
     if (!user) return null;
-    const { ...rest } = user;
-    return rest;
+    const { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, status, createdAt, creatorProfile, freelancerProfile } = user;
+    return { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, status, createdAt, creatorProfile, freelancerProfile };
 }
 
 module.exports = { initiateOtp, completeOtp, verifyFirebaseToken, refreshTokens, logout, getMe, switchRole };

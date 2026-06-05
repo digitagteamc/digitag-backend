@@ -18,7 +18,7 @@ const otpLimiter = rateLimit({
 });
 
 router.post('/send-otp', otpLimiter, validate(schemas.sendOtpSchema), controller.sendOtp);
-router.post('/verify-otp', validate(schemas.verifyOtpSchema), controller.verifyOtp);
+router.post('/verify-otp', otpLimiter, validate(schemas.verifyOtpSchema), controller.verifyOtp);
 router.post('/verify-firebase', validate(schemas.verifyFirebaseSchema), controller.verifyFirebase);
 router.post('/refresh-token', validate(schemas.refreshTokenSchema), controller.refreshToken);
 router.post('/logout', validate(schemas.logoutSchema), controller.logout);

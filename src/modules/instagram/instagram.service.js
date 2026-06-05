@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const env = require('../../config/env');
@@ -20,7 +21,7 @@ function extractInstagramUsername(input) {
 }
 
 function generateCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(crypto.randomInt(100000, 1000000));
 }
 
 async function startVerification(userId, instagramUrl) {

@@ -32,6 +32,7 @@ function buildPostInclude() {
             profilePicture: true,
             location: true,
             categoryId: true,
+            category: { select: { id: true, name: true, slug: true } },
           },
         },
         freelancerProfile: {
@@ -41,6 +42,7 @@ function buildPostInclude() {
             profilePicture: true,
             location: true,
             categoryId: true,
+            category: { select: { id: true, name: true, slug: true } },
           },
         },
       },
