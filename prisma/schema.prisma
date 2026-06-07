@@ -358,6 +358,8 @@ model Message {
 
   @@index([conversationId, createdAt])
   @@index([senderId])
+  // Covers unread-count groupBy: senderId filter + isRead filter per conversation
+  @@index([conversationId, senderId, isRead])
 }
 
 // -------------------------

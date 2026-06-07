@@ -1,10 +1,20 @@
 const { Router } = require('express');
 const Joi = require('joi');
+const rateLimit = require('express-rate-limit');
 
 const controller = require('./feed.controller');
 const { authenticate } = require('../../middlewares/authMiddleware');
 const { validateRequest } = require('../../middlewares/validateMiddleware');
 const { pagination, uuid } = require('../../validations/common.validation');
+
+// 30 feed fetches per minute — prevents infinite-scroll abuse
+const feedLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const router = Router();
 
@@ -15,6 +25,6 @@ const feedQuery = pagination.keys({
   categoryId: uuid.optional(),
 });
 
-router.get('/', authenticate, validateRequest({ query: feedQuery }), controller.getFeed);
+router.get('/', authenticate, feedLimiter, validateRequest({ query: feedQuery }), controller.getFeed);
 
 module.exports = router;

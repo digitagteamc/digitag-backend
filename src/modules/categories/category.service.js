@@ -1,22 +1,29 @@
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
+const cache = require('../../services/cache/cache.service');
+
+const CATEGORIES_TTL = 10 * 60; // 10 minutes
 
 async function listCategories({ role, search, onlyActive = true } = {}) {
-  const where = {};
-  if (onlyActive) where.isActive = true;
-  if (role) where.applicableRoles = { has: role };
-  if (search) where.name = { contains: search, mode: 'insensitive' };
+  const cacheKey = `categories:${role || 'all'}:${search || ''}:${onlyActive}`;
 
-  return prisma.category.findMany({
-    where,
-    orderBy: { name: 'asc' },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      description: true,
-      applicableRoles: true,
-    },
+  return cache.wrap(cacheKey, CATEGORIES_TTL, async () => {
+    const where = {};
+    if (onlyActive) where.isActive = true;
+    if (role) where.applicableRoles = { has: role };
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+
+    return prisma.category.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        applicableRoles: true,
+      },
+    });
   });
 }
 

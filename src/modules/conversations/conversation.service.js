@@ -2,6 +2,9 @@ const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const admin = require('../../config/firebase');
 const logger = require('../../utils/logger');
+const cache = require('../../services/cache/cache.service');
+
+const CONVERSATIONS_TTL = 30; // seconds
 
 async function sendFcm(fcmToken, data, notification = null) {
   if (!fcmToken) return;
@@ -46,42 +49,49 @@ function shapeParticipant(user) {
 }
 
 async function listConversations(userId) {
-  const rows = await prisma.conversation.findMany({
-    where: { OR: [{ participantAId: userId }, { participantBId: userId }] },
-    orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'desc' }],
-    include: {
-      participantA: userInclude,
-      participantB: userInclude,
-      messages: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-        select: { id: true, content: true, senderId: true, createdAt: true, isRead: true },
+  const cacheKey = `conversations:${userId}`;
+  const cached = await cache.get(cacheKey);
+  if (cached) return cached;
+
+  const [rows, unreadGroups] = await Promise.all([
+    prisma.conversation.findMany({
+      where: { OR: [{ participantAId: userId }, { participantBId: userId }] },
+      orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        participantA: userInclude,
+        participantB: userInclude,
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { id: true, content: true, senderId: true, createdAt: true, isRead: true },
+        },
       },
-    },
+    }),
+    // Single aggregation query instead of one COUNT per conversation
+    prisma.message.groupBy({
+      by: ['conversationId'],
+      where: { senderId: { not: userId }, isRead: false },
+      _count: { id: true },
+    }),
+  ]);
+
+  const unreadMap = new Map(unreadGroups.map((g) => [g.conversationId, g._count.id]));
+
+  const result = rows.map((c) => {
+    const other = c.participantAId === userId ? c.participantB : c.participantA;
+    return {
+      id: c.id,
+      collaborationId: c.collaborationId,
+      lastMessageAt: c.lastMessageAt,
+      createdAt: c.createdAt,
+      other: shapeParticipant(other),
+      lastMessage: c.messages[0] || null,
+      unreadCount: unreadMap.get(c.id) || 0,
+    };
   });
 
-  const items = await Promise.all(
-    rows.map(async (c) => {
-      const other = c.participantAId === userId ? c.participantB : c.participantA;
-      const lastMessage = c.messages[0] || null;
-
-      const unreadCount = await prisma.message.count({
-        where: { conversationId: c.id, senderId: { not: userId }, isRead: false },
-      });
-
-      return {
-        id: c.id,
-        collaborationId: c.collaborationId,
-        lastMessageAt: c.lastMessageAt,
-        createdAt: c.createdAt,
-        other: shapeParticipant(other),
-        lastMessage,
-        unreadCount,
-      };
-    }),
-  );
-
-  return items;
+  await cache.set(cacheKey, result, CONVERSATIONS_TTL);
+  return result;
 }
 
 async function getConversationById(userId, id) {
@@ -175,6 +185,12 @@ async function sendMessage(userId, conversationId, content, imageUrl = null) {
     { type: 'NEW_MESSAGE', conversationId, messageId: message.id },
     { title: senderName, body: trimmed || '📷 Image' },
   );
+
+  // Bust conversation list cache for both participants
+  await Promise.all([
+    cache.del(`conversations:${userId}`),
+    cache.del(`conversations:${otherUserId}`),
+  ]);
 
   return message;
 }

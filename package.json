@@ -38,6 +38,7 @@
     "express-rate-limit": "^7.4.0",
     "firebase-admin": "^13.8.0",
     "helmet": "^7.1.0",
+    "ioredis": "^5.11.1",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",

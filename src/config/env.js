@@ -22,6 +22,10 @@ const env = {
   CORS_ORIGIN: optional('CORS_ORIGIN', '*'),
 
   DATABASE_URL: required('DATABASE_URL'),
+  DB_CONNECTION_LIMIT: toInt(process.env.DB_CONNECTION_LIMIT, 50),
+
+  REDIS_HOST: optional('REDIS_HOST', '127.0.0.1'),
+  REDIS_PORT: toInt(process.env.REDIS_PORT, 6379),
 
   JWT_ACCESS_SECRET: required('JWT_ACCESS_SECRET', 'dev_access_secret'),
   JWT_REFRESH_SECRET: required('JWT_REFRESH_SECRET', 'dev_refresh_secret'),
@@ -60,9 +64,9 @@ const env = {
   },
 
   RATE_LIMIT: {
-    windowMs: toInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
-    max: toInt(process.env.RATE_LIMIT_MAX, 300),
-    otpMax: toInt(process.env.OTP_RATE_LIMIT_MAX, 5),
+    windowMs: toInt(process.env.RATE_LIMIT_WINDOW_MS, 60 * 1000), // 1-minute window
+    max: toInt(process.env.RATE_LIMIT_MAX, 120),                   // 120 req/min per IP
+    otpMax: toInt(process.env.OTP_RATE_LIMIT_MAX, 3),              // 3 OTP sends/min
   },
 
   LOG_LEVEL: optional('LOG_LEVEL', 'info'),

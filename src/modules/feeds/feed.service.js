@@ -2,10 +2,34 @@ const { prisma } = require('../../config/db');
 const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
 const { buildPostInclude, shapePost } = require('../posts/post.service');
+const cache = require('../../services/cache/cache.service');
+
+// Feed TTL: 90 seconds — fresh enough for real-time feel, saves massive DB load
+const FEED_TTL = 90;
+
+function feedCacheKey(userId, role, query) {
+  const q = [
+    query.page || 1,
+    query.limit || 10,
+    query.collaborationType || '',
+    query.location || '',
+    query.search || '',
+    query.categoryId || '',
+  ].join(':');
+  return `feed:${userId}:${role}:${q}`;
+}
 
 async function getFeed(user, query = {}) {
-  const { skip, take, page, limit } = parsePagination(query);
+  // Skip cache for search/filter queries — those need live results
+  const isFiltered = query.search || query.location || query.collaborationType || query.categoryId;
+  const cacheKey = feedCacheKey(user.id, user.role, query);
 
+  if (!isFiltered) {
+    const cached = await cache.get(cacheKey);
+    if (cached) return cached;
+  }
+
+  const { skip, take, page, limit } = parsePagination(query);
   const targetRoles = OPPOSITE_FEED_ROLE[user.role] || [];
 
   const where = {
@@ -34,10 +58,19 @@ async function getFeed(user, query = {}) {
     prisma.post.count({ where }),
   ]);
 
-  return {
+  const result = {
     items: items.map(shapePost),
     meta: buildPaginationMeta({ total, page, limit }),
   };
+
+  if (!isFiltered) await cache.set(cacheKey, result, FEED_TTL);
+
+  return result;
 }
 
-module.exports = { getFeed };
+// Called from post.service.js after a new post is created — clears feed for that user's role
+async function invalidateFeedCache(userId, role) {
+  await cache.delPattern(`feed:${userId}:${role}:*`);
+}
+
+module.exports = { getFeed, invalidateFeedCache };

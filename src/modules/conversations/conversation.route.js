@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const Joi = require('joi');
+const rateLimit = require('express-rate-limit');
 
 const controller = require('./conversation.controller');
 const schemas = require('./conversation.validation');
@@ -8,6 +9,16 @@ const { validateRequest } = require('../../middlewares/validateMiddleware');
 const { idParam, uuid } = require('../../validations/common.validation');
 
 const msgParam = Joi.object({ id: uuid.required(), msgId: uuid.required() });
+
+// 60 messages per minute per user — prevents spam
+const messageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Sending messages too fast, slow down.' },
+});
 
 const router = Router();
 
@@ -23,6 +34,7 @@ router.get(
 router.post(
   '/:id/messages',
   authenticate,
+  messageLimiter,
   validateRequest({ params: idParam, body: schemas.sendMessageSchema }),
   controller.sendMessage,
 );

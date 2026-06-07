@@ -34,14 +34,26 @@ if (!env.isTest) {
   );
 }
 
+// Global limiter — generous enough for legitimate heavy usage, tight enough to block bots
 app.use(
   rateLimit({
-    windowMs: env.RATE_LIMIT.windowMs,
+    windowMs: 60 * 1000,   // 1-minute windows
     max: env.RATE_LIMIT.max,
     standardHeaders: true,
     legacyHeaders: false,
+    message: { success: false, message: 'Too many requests, please try again later.' },
   }),
 );
+
+// Slow-down repeated requests (sliding penalty) — export for use in route files
+app.locals.createLimiter = (windowMs, max) =>
+  rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, message: 'Too many requests, please try again later.' },
+  });
 
 app.get('/', (_req, res) => {
   res.json({ success: true, service: 'digitag-api', version: 'v1' });
