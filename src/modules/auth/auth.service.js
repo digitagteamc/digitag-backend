@@ -249,10 +249,32 @@ async function switchRole(userId, role) {
     };
 }
 
+/**
+ * Permanently deletes the user's account and all associated data.
+ * Cascades via Prisma schema relations (posts, messages, profiles, tokens).
+ * Google Play requires self-service account deletion — this powers that button.
+ */
+async function deleteAccount(userId) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw ApiError.notFound('Account not found');
+
+    // Soft-delete first so in-flight sessions get a clear error, then hard-delete
+    await prisma.user.update({ where: { id: userId }, data: { status: 'DELETED' } });
+
+    // Revoke all refresh tokens so existing sessions can't be used
+    await prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+    });
+
+    // Hard delete — Prisma cascade handles profiles, posts, messages, collaborations
+    await prisma.user.delete({ where: { id: userId } });
+}
+
 function sanitizeUser(user) {
     if (!user) return null;
     const { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, status, createdAt, creatorProfile, freelancerProfile } = user;
     return { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, status, createdAt, creatorProfile, freelancerProfile };
 }
 
-module.exports = { initiateOtp, completeOtp, verifyFirebaseToken, refreshTokens, logout, getMe, switchRole };
+module.exports = { initiateOtp, completeOtp, verifyFirebaseToken, refreshTokens, logout, getMe, switchRole, deleteAccount };

@@ -24,5 +24,6 @@ router.post('/refresh-token', validate(schemas.refreshTokenSchema), controller.r
 router.post('/logout', validate(schemas.logoutSchema), controller.logout);
 router.get('/me', authenticate, controller.me);
 router.post('/switch-role', authenticate, validate(schemas.switchRoleSchema), controller.switchRole);
+router.delete('/account', authenticate, controller.deleteAccount);
 
 module.exports = router;

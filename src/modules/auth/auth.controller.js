@@ -52,4 +52,9 @@ const switchRole = asyncHandler(async (req, res) => {
   return success(res, { message: 'Active role updated', data: result });
 });
 
-module.exports = { sendOtp, verifyOtp, verifyFirebase, refreshToken, logout, me, switchRole };
+const deleteAccount = asyncHandler(async (req, res) => {
+  await authService.deleteAccount(req.user.id);
+  return success(res, { message: 'Account permanently deleted' });
+});
+
+module.exports = { sendOtp, verifyOtp, verifyFirebase, refreshToken, logout, me, switchRole, deleteAccount };
