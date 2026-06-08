@@ -76,8 +76,9 @@ function shapeOwner(user, postRole) {
     : profile.language ? [profile.language] : [];
   const languages = langsArr.join(', ') || null;
 
-  // Format experience from enum
-  const experience = EXP_LABEL[profile.experienceLevel] || null;
+  // Normalize: creatorProfile stores it as String ("Intermediate"), freelancerProfile as enum ("INTERMEDIATE")
+  const expKey = profile.experienceLevel ? profile.experienceLevel.toUpperCase() : null;
+  const experience = expKey ? (EXP_LABEL[expKey] || profile.experienceLevel) : null;
 
   return {
     id: user.id,
