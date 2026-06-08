@@ -18,6 +18,13 @@ async function sendFcm(fcmToken, data, notification = null) {
   }
 }
 
+const EXP_LABEL = {
+  BEGINNER: 'Beginner',
+  INTERMEDIATE: 'Intermediate',
+  ADVANCED: 'Advanced',
+  EXPERT: 'Expert',
+};
+
 function buildPostInclude() {
   return {
     user: {
@@ -33,6 +40,9 @@ function buildPostInclude() {
             location: true,
             categoryId: true,
             category: { select: { id: true, name: true, slug: true } },
+            languages: true,
+            language: true,
+            experienceLevel: true,
           },
         },
         freelancerProfile: {
@@ -43,6 +53,10 @@ function buildPostInclude() {
             location: true,
             categoryId: true,
             category: { select: { id: true, name: true, slug: true } },
+            languages: true,
+            language: true,
+            experienceLevel: true,
+            skills: true,
           },
         },
       },
@@ -52,16 +66,28 @@ function buildPostInclude() {
 
 function shapeOwner(user, postRole) {
   if (!user) return null;
-  // Use the role stored on the post (what the user was when they created it),
-  // not the user's current role, to pick the right profile and label.
   const role = postRole || user.role;
   const profile = role === ROLES.CREATOR ? user.creatorProfile : user.freelancerProfile;
+  if (!profile) return { id: user.id, role, name: null, profilePicture: null, location: null, languages: null, experience: null, category: null };
+
+  // Format languages: prefer the array, fall back to single language string
+  const langsArr = profile.languages && profile.languages.length > 0
+    ? profile.languages
+    : profile.language ? [profile.language] : [];
+  const languages = langsArr.join(', ') || null;
+
+  // Format experience from enum
+  const experience = EXP_LABEL[profile.experienceLevel] || null;
+
   return {
     id: user.id,
     role,
-    name: profile ? profile.name : null,
-    profilePicture: profile ? profile.profilePicture : null,
-    location: profile ? profile.location : null,
+    name: profile.name,
+    profilePicture: profile.profilePicture,
+    location: profile.location,
+    languages,
+    experience,
+    category: profile.category || null,
   };
 }
 
