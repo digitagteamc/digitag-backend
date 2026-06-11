@@ -139,6 +139,25 @@ async function listCollaborations(userId, { direction = 'incoming', status } = {
 async function respondToCollaboration(userId, collabId, action) {
   const collab = await prisma.collaboration.findUnique({ where: { id: collabId } });
   if (!collab) throw ApiError.notFound('Collaboration request not found');
+
+  // COMPLETE action: only the creator party can mark work as done
+  if (action === 'COMPLETE') {
+    const isParty = collab.senderId === userId || collab.receiverId === userId;
+    if (!isParty) throw ApiError.forbidden('You are not part of this collaboration');
+    if (collab.status !== 'ACCEPTED') {
+      throw ApiError.badRequest('Only accepted collaborations can be marked complete');
+    }
+    const caller = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (caller?.role !== 'CREATOR') throw ApiError.forbidden('Only a Creator can mark collaboration as complete');
+
+    const updated = await prisma.collaboration.update({
+      where: { id: collabId },
+      data: { status: 'COMPLETED', respondedAt: new Date() },
+      include: { sender: userInclude, receiver: userInclude, post: postInclude },
+    });
+    return shapeCollab(updated);
+  }
+
   if (collab.receiverId !== userId) throw ApiError.forbidden('Only the recipient can respond');
   if (collab.status !== 'PENDING') {
     throw ApiError.badRequest(`Request is already ${collab.status.toLowerCase()}`);

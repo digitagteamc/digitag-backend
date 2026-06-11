@@ -40,11 +40,21 @@ async function getFeed(user, query = {}) {
   if (query.collaborationType) where.collaborationType = query.collaborationType;
   if (query.location) where.location = { contains: query.location, mode: 'insensitive' };
   if (query.search) where.description = { contains: query.search, mode: 'insensitive' };
+
+  // Explicit category filter from query takes precedence
   if (query.categoryId) {
-    where.OR = [
-      { user: { creatorProfile: { categoryId: query.categoryId } } },
-      { user: { freelancerProfile: { categoryId: query.categoryId } } },
-    ];
+    where.user = {
+      OR: [
+        { creatorProfile: { categoryId: query.categoryId } },
+        { freelancerProfile: { categoryId: query.categoryId } },
+      ],
+    };
+  } else if (user.categoryId) {
+    // Auto-filter by the viewer's own category so freelancers only see matching creator posts
+    // and creators only see matching freelancer posts
+    where.user = {
+      categoryId: user.categoryId,
+    };
   }
 
   const [items, total] = await Promise.all([

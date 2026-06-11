@@ -44,6 +44,7 @@ enum CollaborationStatus {
   ACCEPTED
   DECLINED
   CANCELLED
+  COMPLETED
 }
 
 enum CallStatus {

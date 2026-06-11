@@ -39,13 +39,7 @@ function buildProfileService({ model, role }) {
 
     if (data.email) await ensureEmailAvailable(userId, data.email);
 
-    const tagId = await generateTagId({
-      location: data.location,
-      language: data.language,
-      mobileNumber: user.mobileNumber,
-      role,
-      model,
-    });
+    const tagId = await generateTagId({ role, model });
 
     const profile = await delegate().create({ data: { ...data, userId, tagId } });
 

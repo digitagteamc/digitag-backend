@@ -8,12 +8,12 @@ const createSchema = Joi.object({
 });
 
 const respondSchema = Joi.object({
-  action: Joi.string().valid('ACCEPT', 'DECLINE').required(),
+  action: Joi.string().valid('ACCEPT', 'DECLINE', 'COMPLETE').required(),
 });
 
 const listQuery = Joi.object({
   direction: Joi.string().valid('incoming', 'outgoing', 'all').optional(),
-  status: Joi.string().valid('PENDING', 'ACCEPTED', 'DECLINED', 'CANCELLED').optional(),
+  status: Joi.string().valid('PENDING', 'ACCEPTED', 'DECLINED', 'CANCELLED', 'COMPLETED').optional(),
 }).unknown(true);
 
 module.exports = { createSchema, respondSchema, listQuery };
