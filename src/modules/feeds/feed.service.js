@@ -49,12 +49,6 @@ async function getFeed(user, query = {}) {
         { freelancerProfile: { categoryId: query.categoryId } },
       ],
     };
-  } else if (user.categoryId) {
-    // Auto-filter by the viewer's own category so freelancers only see matching creator posts
-    // and creators only see matching freelancer posts
-    where.user = {
-      categoryId: user.categoryId,
-    };
   }
 
   const [items, total] = await Promise.all([

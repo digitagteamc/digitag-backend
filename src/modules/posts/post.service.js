@@ -40,6 +40,7 @@ function buildPostInclude() {
             location: true,
             categoryId: true,
             category: { select: { id: true, name: true, slug: true } },
+            categories: true,
             languages: true,
             language: true,
             experienceLevel: true,
@@ -53,6 +54,7 @@ function buildPostInclude() {
             location: true,
             categoryId: true,
             category: { select: { id: true, name: true, slug: true } },
+            categories: true,
             languages: true,
             language: true,
             experienceLevel: true,
@@ -89,6 +91,7 @@ function shapeOwner(user, postRole) {
     languages,
     experience,
     category: profile.category || null,
+    categories: Array.isArray(profile.categories) ? profile.categories : [],
   };
 }
 
@@ -106,6 +109,7 @@ async function createPost(user, data) {
       description: data.description,
       location: data.location || null,
       collaborationType: data.collaborationType || 'UNPAID',
+      category: data.category || null,
       imageUrl: data.imageUrl || null,
       imageKey: data.imageKey || null,
     },
