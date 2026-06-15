@@ -46,4 +46,24 @@ const userPosts = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
 });
 
-module.exports = { create, update, remove, getById, myPosts, userPosts };
+const save = asyncHandler(async (req, res) => {
+  const data = await service.savePost(req.user.id, req.params.id);
+  return success(res, { message: 'Post saved', data });
+});
+
+const unsave = asyncHandler(async (req, res) => {
+  const data = await service.unsavePost(req.user.id, req.params.id);
+  return success(res, { message: 'Post unsaved', data });
+});
+
+const savedPosts = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listSavedPosts(req.user.id, req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const savedPostIds = asyncHandler(async (req, res) => {
+  const ids = await service.getSavedPostIds(req.user.id);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: ids });
+});
+
+module.exports = { create, update, remove, getById, myPosts, userPosts, save, unsave, savedPosts, savedPostIds };

@@ -218,6 +218,45 @@ async function listUserPosts(userId, query = {}) {
   };
 }
 
+async function savePost(userId, postId) {
+  await prisma.savedPost.upsert({
+    where: { userId_postId: { userId, postId } },
+    update: {},
+    create: { userId, postId },
+  });
+  return { saved: true };
+}
+
+async function unsavePost(userId, postId) {
+  await prisma.savedPost.deleteMany({ where: { userId, postId } });
+  return { saved: false };
+}
+
+async function listSavedPosts(userId, query = {}) {
+  const { limit = 20, page = 1 } = parsePagination(query);
+  const skip = (page - 1) * limit;
+  const [rows, total] = await Promise.all([
+    prisma.savedPost.findMany({
+      where: { userId },
+      skip,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: { post: { include: buildPostInclude() } },
+    }),
+    prisma.savedPost.count({ where: { userId } }),
+  ]);
+  const items = rows.map(r => shapePost(r.post)).filter(Boolean);
+  return { items, meta: buildPaginationMeta({ total, page, limit }) };
+}
+
+async function getSavedPostIds(userId) {
+  const rows = await prisma.savedPost.findMany({
+    where: { userId },
+    select: { postId: true },
+  });
+  return rows.map(r => r.postId);
+}
+
 module.exports = {
   createPost,
   updatePost,
@@ -225,6 +264,10 @@ module.exports = {
   getPostById,
   listMyPosts,
   listUserPosts,
+  savePost,
+  unsavePost,
+  listSavedPosts,
+  getSavedPostIds,
   buildPostInclude,
   shapePost,
 };
