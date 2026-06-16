@@ -77,15 +77,17 @@ async function initiateCall(callerId, calleeId) {
     caller?.freelancerProfile?.name ||
     'DigiTag User';
 
+  // Data-only message (no `notification` field): on Android, including a
+  // notification payload alongside data suppresses the JS background
+  // handler — the OS just shows a plain banner instead. Keeping this
+  // data-only ensures setBackgroundMessageHandler always fires so we can
+  // display a proper full-screen ringing call notification via notifee.
   await sendFcm(callee.fcmToken, {
     type: 'INCOMING_CALL',
     callId: call.id,
     channelName,
     callerName,
     callerId,
-  }, {
-    title: `${callerName} is calling`,
-    body: 'Tap to answer',
   });
 
   return { callId: call.id, channelName, token, appId: env.AGORA_APP_ID };
