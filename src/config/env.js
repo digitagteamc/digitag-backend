@@ -37,6 +37,7 @@ const env = {
   OTP_EXPIRY_MINUTES: toInt(process.env.OTP_EXPIRY_MINUTES, 5),
   OTP_MAX_ATTEMPTS: toInt(process.env.OTP_MAX_ATTEMPTS, 5),
   OTP_RESEND_COOLDOWN_SECONDS: toInt(process.env.OTP_RESEND_COOLDOWN_SECONDS, 30),
+  TEST_PHONE_NUMBERS: optional('TEST_PHONE_NUMBERS', ''),
 
   TWILIO: {
     accountSid: optional('TWILIO_ACCOUNT_SID'),
