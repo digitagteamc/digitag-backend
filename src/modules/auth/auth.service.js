@@ -89,12 +89,10 @@ async function completeOtp({
         });
         isNewUser = true;
     } else {
-        // Set the active session role to whatever was requested — no rejection
-        // on role mismatch. The same phone number can freely use either role.
+        // Keep original role — one phone number = one role forever
         user = await prisma.user.update({
             where: { id: user.id },
             data: {
-                role,
                 isVerified: true,
                 lastLoginAt: new Date(),
                 categoryId: categoryId || user.categoryId,
@@ -166,10 +164,10 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
         });
         isNewUser = true;
     } else {
+        // Keep original role — one phone number = one role forever
         user = await prisma.user.update({
             where: { id: user.id },
             data: {
-                role: role || user.role,
                 isVerified: true,
                 lastLoginAt: new Date(),
                 categoryId: categoryId || user.categoryId,
