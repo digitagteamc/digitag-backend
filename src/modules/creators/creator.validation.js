@@ -7,7 +7,7 @@ const baseCreatorFields = {
   name: Joi.string().trim().min(2).max(100),
   email: email.allow('', null).optional(),
   categoryId: uuid.optional(),
-  categories: Joi.array().items(Joi.string()).optional(),
+  categories: Joi.array().items(Joi.string()).max(1).optional(),
   languages: Joi.array().items(Joi.string()).optional(),
   language: Joi.string().trim().max(50).allow('', null).optional(),
   bio: Joi.string().trim().max(1000).allow('', null).optional(),
