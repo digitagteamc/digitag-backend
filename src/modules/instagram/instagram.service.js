@@ -80,32 +80,6 @@ async function getVerificationStatus(userId, id) {
   };
 }
 
-/**
- * Called from the webhook handler.
- * Resolves the sender's username via Instagram Graph API, then matches the code.
- */
-async function resolveIgsidToProfile(igScopedId) {
-  const token = env.INSTAGRAM_ACCESS_TOKEN;
-  if (!token) {
-    console.error('[Instagram] No access token configured');
-    return null;
-  }
-  try {
-    const url = `https://graph.instagram.com/v21.0/${igScopedId}?fields=username&access_token=${token}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    console.log(`[Instagram] IGSID ${igScopedId} resolved:`, JSON.stringify(data));
-    if (!data.username) return null;
-    return {
-      username: data.username.toLowerCase(),
-      followersCount: null,
-    };
-  } catch (err) {
-    console.error('[Instagram] IGSID resolve error:', err.message);
-    return null;
-  }
-}
-
 async function handleWebhookMessage(senderIgScopedId, messageText) {
   console.log(`[Instagram] Webhook DM received — sender: ${senderIgScopedId}, text: "${messageText}"`);
   if (!messageText) return;
@@ -129,52 +103,18 @@ async function handleWebhookMessage(senderIgScopedId, messageText) {
     return;
   }
 
-  console.log(`[Instagram] Found pending verification for @${record.instagramUsername}`);
-
-  const senderProfile = await resolveIgsidToProfile(senderIgScopedId);
-  if (!senderProfile) {
-    console.error('[Instagram] Could not resolve sender profile — verification blocked');
-    return;
-  }
-
-  console.log(`[Instagram] Sender: @${senderProfile.username}, Expected: @${record.instagramUsername}, Followers: ${senderProfile.followersCount}`);
-
-  if (senderProfile.username !== record.instagramUsername.toLowerCase()) {
-    console.warn(`[Instagram] Username mismatch — rejecting`);
-    return;
-  }
+  console.log(`[Instagram] Code matched for @${record.instagramUsername} — marking VERIFIED`);
 
   await prisma.instagramVerification.update({
     where: { id: record.id },
     data: { status: 'VERIFIED', verifiedAt: now },
   });
 
-  // Save followers count to creator or freelancer profile
-  if (senderProfile.followersCount !== null) {
-    const user = await prisma.user.findUnique({
-      where: { id: record.userId },
-      select: { role: true },
-    });
-    if (user?.role === 'CREATOR') {
-      await prisma.creatorProfile.updateMany({
-        where: { userId: record.userId },
-        data: { instagramFollowers: senderProfile.followersCount },
-      });
-    } else if (user?.role === 'FREELANCER') {
-      await prisma.freelancerProfile.updateMany({
-        where: { userId: record.userId },
-        data: { instagramFollowers: senderProfile.followersCount },
-      });
-    }
-    console.log(`[Instagram] ✅ Verified @${senderProfile.username} — followers: ${senderProfile.followersCount}`);
-  } else {
-    console.log(`[Instagram] ✅ Verified @${senderProfile.username} — followers count unavailable`);
-  }
+  console.log(`[Instagram] ✅ Verified @${record.instagramUsername}`);
 }
 
 module.exports = {
   startVerification,
   getVerificationStatus,
   handleWebhookMessage,
-  extractInstagramUsername,
 };
