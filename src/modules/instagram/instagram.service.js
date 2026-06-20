@@ -24,9 +24,34 @@ function generateCode() {
   return String(crypto.randomInt(100000, 1000000));
 }
 
+async function fetchFollowerCount(igScopedId) {
+  const token = env.INSTAGRAM_ACCESS_TOKEN;
+  if (!token) return null;
+  try {
+    const url = `https://graph.facebook.com/v21.0/${igScopedId}?fields=follower_count&access_token=${token}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    console.log(`[Instagram] IGSID ${igScopedId} follower data:`, JSON.stringify(data));
+    if (typeof data.follower_count === 'number') return data.follower_count;
+    return null;
+  } catch (err) {
+    console.error('[Instagram] Follower count fetch error:', err.message);
+    return null;
+  }
+}
+
 async function startVerification(userId, instagramUrl) {
   const username = extractInstagramUsername(instagramUrl);
   if (!username) throw ApiError.badRequest('Invalid Instagram URL or username');
+
+  // Block if this handle is already verified by a different user
+  const alreadyVerified = await prisma.instagramVerification.findFirst({
+    where: { instagramUsername: username, status: 'VERIFIED', NOT: { userId } },
+    select: { id: true },
+  });
+  if (alreadyVerified) {
+    throw ApiError.conflict('This Instagram account is already verified by another DigiTag user');
+  }
 
   const code = generateCode();
   const expiresAt = new Date(Date.now() + EXPIRY_MINUTES * 60 * 1000);
@@ -110,7 +135,28 @@ async function handleWebhookMessage(senderIgScopedId, messageText) {
     data: { status: 'VERIFIED', verifiedAt: now },
   });
 
-  console.log(`[Instagram] ✅ Verified @${record.instagramUsername}`);
+  // Try to auto-fill follower count from the sender's IGSID
+  const followerCount = await fetchFollowerCount(senderIgScopedId);
+  if (followerCount !== null) {
+    const user = await prisma.user.findUnique({
+      where: { id: record.userId },
+      select: { role: true },
+    });
+    if (user?.role === 'CREATOR') {
+      await prisma.creatorProfile.updateMany({
+        where: { userId: record.userId },
+        data: { instagramFollowers: followerCount },
+      });
+    } else if (user?.role === 'FREELANCER') {
+      await prisma.freelancerProfile.updateMany({
+        where: { userId: record.userId },
+        data: { instagramFollowers: followerCount },
+      });
+    }
+    console.log(`[Instagram] ✅ Verified @${record.instagramUsername} — followers: ${followerCount}`);
+  } else {
+    console.log(`[Instagram] ✅ Verified @${record.instagramUsername} (follower count unavailable via API)`);
+  }
 }
 
 module.exports = {
