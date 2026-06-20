@@ -7,6 +7,8 @@ const createPostSchema = Joi.object({
   description: Joi.string().trim().min(1).max(2000).required(),
   location: Joi.string().trim().max(120).allow('', null).optional(),
   collaborationType: Joi.string().valid(...COLLAB_TYPES).default('UNPAID'),
+  category: Joi.string().trim().max(100).allow('', null).optional(),
+  budget: Joi.string().trim().max(100).allow('', null).optional(),
   imageUrl: url.allow('', null).optional(),
   imageKey: Joi.string().allow('', null).optional(),
 });
@@ -15,6 +17,8 @@ const updatePostSchema = Joi.object({
   description: Joi.string().trim().min(1).max(2000).optional(),
   location: Joi.string().trim().max(120).allow('', null).optional(),
   collaborationType: Joi.string().valid(...COLLAB_TYPES).optional(),
+  category: Joi.string().trim().max(100).allow('', null).optional(),
+  budget: Joi.string().trim().max(100).allow('', null).optional(),
   imageUrl: url.allow('', null).optional(),
   imageKey: Joi.string().allow('', null).optional(),
   isActive: Joi.boolean().optional(),

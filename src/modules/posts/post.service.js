@@ -110,6 +110,7 @@ async function createPost(user, data) {
       location: data.location || null,
       collaborationType: data.collaborationType || 'UNPAID',
       category: data.category || null,
+      budget: data.budget || null,
       imageUrl: data.imageUrl || null,
       imageKey: data.imageKey || null,
     },

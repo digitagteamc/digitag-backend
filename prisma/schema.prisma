@@ -242,6 +242,7 @@ model Post {
   location          String?
   collaborationType CollaborationType @default(UNPAID)
   category          String?
+  budget            String?
   isActive          Boolean           @default(true)
   isHidden          Boolean           @default(false)
   createdAt         DateTime          @default(now())
