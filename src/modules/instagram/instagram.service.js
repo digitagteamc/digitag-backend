@@ -24,15 +24,19 @@ function generateCode() {
   return String(crypto.randomInt(100000, 1000000));
 }
 
-async function fetchFollowerCount(igScopedId) {
+async function fetchFollowerCount(username) {
   const token = env.INSTAGRAM_ACCESS_TOKEN;
-  if (!token) return null;
+  const igAccountId = env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
+  if (!token || !igAccountId) return null;
   try {
-    const url = `https://graph.facebook.com/v21.0/${igScopedId}?fields=follower_count&access_token=${token}`;
+    // Business Discovery API: look up any public Instagram business/creator account by username
+    const url = `https://graph.facebook.com/v21.0/${igAccountId}?fields=business_discovery.fields(followers_count,username)&username=${encodeURIComponent(username)}&access_token=${token}`;
     const res = await fetch(url);
     const data = await res.json();
-    console.log(`[Instagram] IGSID ${igScopedId} follower data:`, JSON.stringify(data));
-    if (typeof data.follower_count === 'number') return data.follower_count;
+    console.log(`[Instagram] Business discovery for @${username}:`, JSON.stringify(data));
+    if (typeof data.business_discovery?.followers_count === 'number') {
+      return data.business_discovery.followers_count;
+    }
     return null;
   } catch (err) {
     console.error('[Instagram] Follower count fetch error:', err.message);
@@ -135,8 +139,8 @@ async function handleWebhookMessage(senderIgScopedId, messageText) {
     data: { status: 'VERIFIED', verifiedAt: now },
   });
 
-  // Try to auto-fill follower count from the sender's IGSID
-  const followerCount = await fetchFollowerCount(senderIgScopedId);
+  // Auto-fill follower count via Business Discovery API using the verified username
+  const followerCount = await fetchFollowerCount(record.instagramUsername);
   if (followerCount !== null) {
     const user = await prisma.user.findUnique({
       where: { id: record.userId },
