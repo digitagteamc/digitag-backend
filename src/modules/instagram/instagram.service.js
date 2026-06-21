@@ -24,13 +24,28 @@ function generateCode() {
   return String(crypto.randomInt(100000, 1000000));
 }
 
-async function fetchFollowerCount(username) {
+async function fetchSenderProfile(igScopedId) {
   const token = env.INSTAGRAM_ACCESS_TOKEN;
-  const igAccountId = env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
-  if (!token || !igAccountId) return null;
+  if (!token) return null;
   try {
-    // Business Discovery API: look up any public Instagram business/creator account by username
-    const url = `https://graph.facebook.com/v21.0/${igAccountId}?fields=business_discovery.fields(followers_count,username)&username=${encodeURIComponent(username)}&access_token=${token}`;
+    // IGSID lookup: returns name, username, profile_pic (not followers_count)
+    const url = `https://graph.instagram.com/v21.0/${igScopedId}?fields=id,name,username,profile_pic&access_token=${token}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchFollowerCount(username) {
+  // Requires INSTAGRAM_PAGE_TOKEN (Facebook Page Access Token, EAA...) for Business Discovery API
+  const pageToken = env.INSTAGRAM_PAGE_TOKEN;
+  const igAccountId = env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
+  if (!pageToken || !igAccountId) return null;
+  try {
+    const url = `https://graph.facebook.com/v21.0/${igAccountId}?fields=business_discovery.fields(followers_count,username)&username=${encodeURIComponent(username)}&access_token=${pageToken}`;
     const res = await fetch(url);
     const data = await res.json();
     console.log(`[Instagram] Business discovery for @${username}:`, JSON.stringify(data));
@@ -139,28 +154,26 @@ async function handleWebhookMessage(senderIgScopedId, messageText) {
     data: { status: 'VERIFIED', verifiedAt: now },
   });
 
-  // Auto-fill follower count via Business Discovery API using the verified username
+  // Fetch sender profile (name, username, profile_pic) via IGSID — always works
+  const senderProfile = await fetchSenderProfile(senderIgScopedId);
+
+  // Fetch follower count via Business Discovery (needs INSTAGRAM_PAGE_TOKEN)
   const followerCount = await fetchFollowerCount(record.instagramUsername);
-  if (followerCount !== null) {
-    const user = await prisma.user.findUnique({
-      where: { id: record.userId },
-      select: { role: true },
-    });
-    if (user?.role === 'CREATOR') {
-      await prisma.creatorProfile.updateMany({
-        where: { userId: record.userId },
-        data: { instagramFollowers: followerCount },
-      });
-    } else if (user?.role === 'FREELANCER') {
-      await prisma.freelancerProfile.updateMany({
-        where: { userId: record.userId },
-        data: { instagramFollowers: followerCount },
-      });
+
+  const user = await prisma.user.findUnique({
+    where: { id: record.userId },
+    select: { role: true },
+  });
+
+  if (followerCount !== null && user) {
+    if (user.role === 'CREATOR') {
+      await prisma.creatorProfile.updateMany({ where: { userId: record.userId }, data: { instagramFollowers: followerCount } });
+    } else if (user.role === 'FREELANCER') {
+      await prisma.freelancerProfile.updateMany({ where: { userId: record.userId }, data: { instagramFollowers: followerCount } });
     }
-    console.log(`[Instagram] ✅ Verified @${record.instagramUsername} — followers: ${followerCount}`);
-  } else {
-    console.log(`[Instagram] ✅ Verified @${record.instagramUsername} (follower count unavailable via API)`);
   }
+
+  console.log(`[Instagram] ✅ Verified @${record.instagramUsername} — followers: ${followerCount ?? 'N/A'}, sender name: ${senderProfile?.name ?? 'N/A'}`);
 }
 
 module.exports = {
