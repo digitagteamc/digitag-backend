@@ -207,8 +207,8 @@ async function getMe(userId) {
         where: { id: userId },
         include: {
             category: { select: { id: true, name: true, slug: true } },
-            creatorProfile: true,
-            freelancerProfile: true,
+            creatorProfile: { include: { category: { select: { id: true, name: true, slug: true } } } },
+            freelancerProfile: { include: { category: { select: { id: true, name: true, slug: true } } } },
         },
     });
     if (!user) throw ApiError.notFound();
