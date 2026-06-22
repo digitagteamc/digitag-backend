@@ -12,12 +12,30 @@ const prisma = new PrismaClient();
 // Skill categories (backend Category model)
 // -------------------------
 const CATEGORIES = [
-  { name: "Video Editing",   slug: "video-editing",   description: "Professional video editing and post-production",        applicableRoles: ["CREATOR", "FREELANCER"] },
-  { name: "Photography",     slug: "photography",      description: "Product, lifestyle, and portrait photography",          applicableRoles: ["CREATOR", "FREELANCER"] },
-  { name: "Graphic Design",  slug: "graphic-design",   description: "Branding, illustration, and visual content design",     applicableRoles: ["CREATOR", "FREELANCER"] },
-  { name: "Content Writing", slug: "content-writing",  description: "Copywriting, blogs, scripts, and captions",            applicableRoles: ["CREATOR", "FREELANCER"] },
-  { name: "Social Media",    slug: "social-media",     description: "Social media strategy, management, and growth",        applicableRoles: ["CREATOR", "FREELANCER"] },
-  { name: "Music Production",slug: "music-production", description: "Original compositions, beats, and audio production",   applicableRoles: ["CREATOR", "FREELANCER"] },
+  // Creator categories
+  { name: "Fashion & Lifestyle",   slug: "fashion-lifestyle",     description: "Fashion, style, and lifestyle content",                  applicableRoles: ["CREATOR"] },
+  { name: "Beauty & Skincare",     slug: "beauty-skincare",       description: "Beauty tips, skincare routines, and makeup",             applicableRoles: ["CREATOR"] },
+  { name: "Fitness & Health",      slug: "fitness-health",        description: "Workouts, nutrition, and wellness content",              applicableRoles: ["CREATOR"] },
+  { name: "Tech",                  slug: "tech",                  description: "Technology reviews, tutorials, and news",                applicableRoles: ["CREATOR"] },
+  { name: "Food & Cooking",        slug: "food-cooking",          description: "Recipes, restaurant reviews, and food culture",          applicableRoles: ["CREATOR"] },
+  { name: "Travel",                slug: "travel",                description: "Travel vlogs, guides, and destination content",          applicableRoles: ["CREATOR"] },
+  { name: "Lifestyle",             slug: "lifestyle",             description: "Day-in-the-life, productivity, and personal growth",     applicableRoles: ["CREATOR"] },
+  { name: "Gaming",                slug: "gaming",                description: "Game reviews, streams, and gaming culture",              applicableRoles: ["CREATOR"] },
+  { name: "Education",             slug: "education",             description: "Tutorials, explainers, and educational content",         applicableRoles: ["CREATOR"] },
+  { name: "Business & Finance",    slug: "business-finance",      description: "Entrepreneurship, investing, and financial literacy",    applicableRoles: ["CREATOR"] },
+  { name: "Art & Creativity",      slug: "art-creativity",        description: "Art, crafts, design, and creative expression",          applicableRoles: ["CREATOR"] },
+  { name: "Sports",                slug: "sports",                description: "Sports highlights, training, and athlete content",       applicableRoles: ["CREATOR"] },
+  { name: "Music",                 slug: "music",                 description: "Music covers, original tracks, and music culture",       applicableRoles: ["CREATOR"] },
+  { name: "Parenting",             slug: "parenting",             description: "Parenting tips, family vlogs, and child development",    applicableRoles: ["CREATOR"] },
+  { name: "Home & Garden",         slug: "home-garden",           description: "Home decor, DIY projects, and gardening",               applicableRoles: ["CREATOR"] },
+  { name: "Entertainment",         slug: "entertainment",         description: "Comedy, skits, memes, and entertainment content",       applicableRoles: ["CREATOR"] },
+  // Freelancer categories
+  { name: "Video Editing",         slug: "video-editing",         description: "Professional video editing and post-production",        applicableRoles: ["FREELANCER"] },
+  { name: "Photography",           slug: "photography",           description: "Product, lifestyle, and portrait photography",          applicableRoles: ["FREELANCER"] },
+  { name: "Graphic Design",        slug: "graphic-design",        description: "Branding, illustration, and visual content design",     applicableRoles: ["FREELANCER"] },
+  { name: "Content Writing",       slug: "content-writing",       description: "Copywriting, blogs, scripts, and captions",            applicableRoles: ["FREELANCER"] },
+  { name: "Social Media Management", slug: "social-media-management", description: "Social media strategy, management, and growth",    applicableRoles: ["FREELANCER"] },
+  { name: "Music Production",      slug: "music-production",      description: "Original compositions, beats, and audio production",   applicableRoles: ["FREELANCER"] },
 ];
 
 // -------------------------
