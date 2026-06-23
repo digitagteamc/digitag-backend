@@ -57,6 +57,27 @@ function buildProfileService({ model, role }) {
 
     const profile = await delegate().update({ where: { userId }, data });
 
+    // Shared identity fields apply to the person, not the role — keep the other
+    // role's profile (if any) in sync so switching roles doesn't show stale info.
+    const otherModel = model === 'creatorProfile' ? 'freelancerProfile' : 'creatorProfile';
+    const sharedFields = ['name', 'email', 'profilePicture', 'profilePictureKey'];
+    const sharedUpdate = {};
+    for (const field of sharedFields) {
+      if (data[field] !== undefined) sharedUpdate[field] = data[field];
+    }
+    if (Object.keys(sharedUpdate).length > 0) {
+      const otherProfile = await prisma[otherModel].findUnique({ where: { userId } });
+      if (otherProfile) {
+        try {
+          await prisma[otherModel].update({ where: { userId }, data: sharedUpdate });
+        } catch {
+          // Likely an email unique-constraint clash with a different user's row in
+          // the other role's table — don't let a cosmetic sync failure break the
+          // primary profile update that the user is actually waiting on.
+        }
+      }
+    }
+
     await userService.recomputeProfileCompletion(userId);
     return profile;
   }

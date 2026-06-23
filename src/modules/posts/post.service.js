@@ -7,6 +7,14 @@ const s3UploadService = require('../../services/s3/s3Upload.service');
 const admin = require('../../config/firebase');
 const logger = require('../../utils/logger');
 
+// Lazy require to avoid a circular dependency — feed.service.js requires post.service.js
+// for buildPostInclude/shapePost, so loading invalidateAllFeeds at the top here would grab
+// an incomplete exports object. Resolving it at call time (after both modules finish
+// loading) sidesteps that.
+function invalidateAllFeeds(...args) {
+  return require('../feeds/feed.service').invalidateAllFeeds(...args);
+}
+
 async function sendFcm(fcmToken, data, notification = null) {
   if (!fcmToken) return;
   try {
@@ -117,6 +125,8 @@ async function createPost(user, data) {
     include: buildPostInclude(),
   });
 
+  await invalidateAllFeeds();
+
   // Notify accepted-collaboration connections about the new post.
   const shaped = shapePost(post);
   const posterName = shaped.owner?.name || 'Someone';
@@ -165,6 +175,7 @@ async function updatePost(user, id, data) {
     data,
     include: buildPostInclude(),
   });
+  await invalidateAllFeeds();
   return shapePost(post);
 }
 
@@ -181,6 +192,8 @@ async function deletePost(user, id) {
   if (existing.imageKey) {
     await s3UploadService.deleteObject(existing.imageKey);
   }
+
+  await invalidateAllFeeds();
 }
 
 async function getPostById(id) {

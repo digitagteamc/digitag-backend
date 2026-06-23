@@ -77,4 +77,11 @@ async function invalidateFeedCache(userId, role) {
   await cache.delPattern(`feed:${userId}:${role}:*`);
 }
 
-module.exports = { getFeed, invalidateFeedCache };
+// Feed cache keys are per-viewer (feed:viewerId:viewerRole:...), so a new post from one
+// user can't be targeted at just their own key — every viewer who might see it needs their
+// cached feed cleared. Simplest correct fix: drop the whole feed cache on any post change.
+async function invalidateAllFeeds() {
+  await cache.delPattern('feed:*');
+}
+
+module.exports = { getFeed, invalidateFeedCache, invalidateAllFeeds };
