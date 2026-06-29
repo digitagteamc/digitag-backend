@@ -44,5 +44,11 @@ router.patch(
   validateRequest({ params: msgParam, body: schemas.editMessageSchema }),
   controller.editMessage,
 );
+router.delete(
+  '/:id/messages/:msgId',
+  authenticate,
+  validateRequest({ params: msgParam }),
+  controller.deleteMessage,
+);
 
 module.exports = router;

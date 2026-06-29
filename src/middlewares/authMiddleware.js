@@ -31,12 +31,20 @@ async function authenticate(req, _res, next) {
         isVerified: true,
         isProfileCompleted: true,
         status: true,
+        lastActiveAt: true,
       },
     });
 
     if (!user) throw ApiError.unauthorized(MESSAGES.AUTH.TOKEN_INVALID);
     if (user.status === 'SUSPENDED' || user.status === 'DELETED') {
       throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED);
+    }
+
+    // Presence heartbeat — throttled so normal app usage doesn't hammer the DB with
+    // a write on every single request. Fire-and-forget; never blocks the response.
+    const staleMs = 45_000;
+    if (!user.lastActiveAt || Date.now() - user.lastActiveAt.getTime() > staleMs) {
+      prisma.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date() } }).catch(() => {});
     }
 
     req.user = user;

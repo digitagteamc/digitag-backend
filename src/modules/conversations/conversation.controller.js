@@ -28,9 +28,14 @@ const editMessage = asyncHandler(async (req, res) => {
   return success(res, { message: 'Message updated', data });
 });
 
+const deleteMessage = asyncHandler(async (req, res) => {
+  const data = await service.deleteMessage(req.user.id, req.params.id, req.params.msgId);
+  return success(res, { message: 'Message deleted', data });
+});
+
 const openWith = asyncHandler(async (req, res) => {
   const data = await service.openConversationWith(req.user.id, req.body.userId);
   return success(res, { message: 'Conversation ready', data });
 });
 
-module.exports = { list, getById, listMessages, sendMessage, editMessage, openWith };
+module.exports = { list, getById, listMessages, sendMessage, editMessage, deleteMessage, openWith };

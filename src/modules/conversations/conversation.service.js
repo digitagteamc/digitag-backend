@@ -24,6 +24,7 @@ const userInclude = {
     mobileNumber: true,
     fcmToken: true,
     lastLoginAt: true,
+    lastActiveAt: true,
     creatorProfile: { select: { name: true, profilePicture: true, location: true } },
     freelancerProfile: { select: { name: true, profilePicture: true, location: true } },
   },
@@ -45,6 +46,7 @@ function shapeParticipant(user) {
     profilePicture: profile ? profile.profilePicture : null,
     location: profile ? profile.location : null,
     lastLoginAt: user.lastLoginAt || null,
+    lastActiveAt: user.lastActiveAt || null,
   };
 }
 
@@ -208,6 +210,19 @@ async function editMessage(userId, conversationId, messageId, content) {
   });
 }
 
+/** WhatsApp-style "delete for everyone" — keeps the row (so ordering/read-state stays
+ * intact) but clears the content and flips isDeleted so clients render a placeholder. */
+async function deleteMessage(userId, conversationId, messageId) {
+  const msg = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!msg) throw ApiError.notFound('Message not found');
+  if (msg.senderId !== userId) throw ApiError.forbidden('Cannot delete another user\'s message');
+  if (msg.conversationId !== conversationId) throw ApiError.forbidden('Message not in this conversation');
+  return prisma.message.update({
+    where: { id: messageId },
+    data: { content: '', imageUrl: null, isDeleted: true },
+  });
+}
+
 /** Open-or-create a conversation with another user — only if an accepted
  * collaboration already exists between the two. */
 async function openConversationWith(userId, otherUserId) {
@@ -264,5 +279,6 @@ module.exports = {
   listMessages,
   sendMessage,
   editMessage,
+  deleteMessage,
   openConversationWith,
 };
