@@ -72,6 +72,18 @@ router.get('/reports', validateRequest({ query: v.reportListQuery }), controller
 // PATCH /admin/reports/:id  { status: "reviewed" | "dismissed" }
 router.patch('/reports/:id', validateRequest({ params: v.idParam, body: v.reviewReport }), controller.updateReport);
 
+// Blocks
+// GET /admin/blocks?page=&limit=
+router.get('/blocks', validateRequest({ query: v.blockListQuery }), controller.getBlocks);
+
+// Categories
+// GET /admin/categories?page=&limit=&search=
+router.get('/categories', validateRequest({ query: v.categoryListQuery }), controller.getCategories);
+// POST /admin/categories
+router.post('/categories', validateRequest({ body: v.createCategory }), controller.createCategory);
+// PATCH /admin/categories/:id
+router.patch('/categories/:id', validateRequest({ params: v.idParam, body: v.updateCategory }), controller.updateCategory);
+
 // Activity Logs
 // GET /admin/activity-logs?page=&limit=
 router.get('/activity-logs', validateRequest({ query: v.listQuery }), controller.getActivityLogs);

@@ -112,6 +112,30 @@ const updateReport = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.ADMIN.REPORT_UPDATED, data });
 });
 
+// ─── Blocks ───────────────────────────────────────────────────────────────────
+
+const getBlocks = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listBlocks(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+// ─── Categories ───────────────────────────────────────────────────────────────
+
+const getCategories = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listCategoriesAdmin(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const createCategory = asyncHandler(async (req, res) => {
+  const data = await service.createCategory(req.admin.id, req.admin.name, req.body);
+  return success(res, { statusCode: STATUS.CREATED, message: MESSAGES.GENERIC.CREATED, data });
+});
+
+const updateCategory = asyncHandler(async (req, res) => {
+  const data = await service.updateCategory(req.admin.id, req.admin.name, req.params.id, req.body);
+  return success(res, { message: MESSAGES.GENERIC.UPDATED, data });
+});
+
 // ─── Activity Logs ────────────────────────────────────────────────────────────
 
 const getActivityLogs = asyncHandler(async (req, res) => {
@@ -138,5 +162,9 @@ module.exports = {
   getChats,
   getReports,
   updateReport,
+  getBlocks,
+  getCategories,
+  createCategory,
+  updateCategory,
   getActivityLogs,
 };

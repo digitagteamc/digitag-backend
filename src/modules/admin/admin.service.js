@@ -5,6 +5,7 @@ const { ApiError } = require('../../utils/apiResponse');
 const MESSAGES = require('../../constants/messages');
 const env = require('../../config/env');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
+const cache = require('../../services/cache/cache.service');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,7 @@ function shapeCollab(collab) {
     ACCEPTED: 'active',
     DECLINED: 'cancelled',
     CANCELLED: 'cancelled',
+    COMPLETED: 'completed',
   };
 
   return {
@@ -171,6 +173,32 @@ function shapeReport(report) {
     reportedBy: reporterProfile?.name || reporter?.mobileNumber || 'Unknown',
     reportedAt: report.createdAt.toISOString(),
     status: report.status.toLowerCase(),
+  };
+}
+
+function shapeBlockUser(user) {
+  const profile = user?.creatorProfile || user?.freelancerProfile;
+  return profile?.name || user?.mobileNumber || 'Unknown';
+}
+
+function shapeBlock(block) {
+  return {
+    id: block.id,
+    blocker: shapeBlockUser(block.blocker),
+    blocked: shapeBlockUser(block.blocked),
+    createdAt: block.createdAt.toISOString(),
+  };
+}
+
+function shapeCategory(category) {
+  return {
+    id: category.id,
+    name: category.name,
+    slug: category.slug,
+    description: category.description || null,
+    applicableRoles: category.applicableRoles,
+    isActive: category.isActive,
+    createdAt: category.createdAt.toISOString(),
   };
 }
 
@@ -475,7 +503,7 @@ async function listCollaborations(query = {}) {
   const { page, limit, skip, take } = parsePagination(query);
   const { status } = query;
 
-  const STATUS_MAP = { pending: 'PENDING', active: 'ACCEPTED', cancelled: 'CANCELLED' };
+  const STATUS_MAP = { pending: 'PENDING', active: 'ACCEPTED', cancelled: 'CANCELLED', completed: 'COMPLETED' };
   const where = {};
   if (status && STATUS_MAP[status]) where.status = STATUS_MAP[status];
 
@@ -597,6 +625,79 @@ async function reviewReport(adminId, adminName, reportId, status) {
   return { ok: true };
 }
 
+// ─── Blocks ───────────────────────────────────────────────────────────────────
+
+async function listBlocks(query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+
+  const userSelect = {
+    mobileNumber: true,
+    creatorProfile: { select: { name: true } },
+    freelancerProfile: { select: { name: true } },
+  };
+
+  const [items, total] = await Promise.all([
+    prisma.block.findMany({
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        blocker: { select: userSelect },
+        blocked: { select: userSelect },
+      },
+    }),
+    prisma.block.count(),
+  ]);
+
+  return { items: items.map(shapeBlock), meta: buildPaginationMeta({ total, page, limit }) };
+}
+
+// ─── Categories ───────────────────────────────────────────────────────────────
+
+async function listCategoriesAdmin(query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const { search } = query;
+
+  const where = {};
+  if (search) where.name = { contains: search, mode: 'insensitive' };
+
+  const [items, total] = await Promise.all([
+    prisma.category.findMany({ where, skip, take, orderBy: { name: 'asc' } }),
+    prisma.category.count({ where }),
+  ]);
+
+  return { items: items.map(shapeCategory), meta: buildPaginationMeta({ total, page, limit }) };
+}
+
+async function createCategory(adminId, adminName, data) {
+  const existing = await prisma.category.findFirst({
+    where: { OR: [{ name: data.name }, { slug: data.slug }] },
+  });
+  if (existing) throw ApiError.conflict('A category with that name or slug already exists');
+
+  const category = await prisma.category.create({
+    data: {
+      name: data.name,
+      slug: data.slug,
+      description: data.description || null,
+      applicableRoles: data.applicableRoles,
+    },
+  });
+  await cache.delPattern('categories:*');
+  await logAdminAction(adminId, adminName, 'Created category', category.name);
+  return shapeCategory(category);
+}
+
+async function updateCategory(adminId, adminName, id, data) {
+  const existing = await prisma.category.findUnique({ where: { id } });
+  if (!existing) throw ApiError.notFound('Category not found');
+
+  const category = await prisma.category.update({ where: { id }, data });
+  await cache.delPattern('categories:*');
+  await logAdminAction(adminId, adminName, 'Updated category', category.name);
+  return shapeCategory(category);
+}
+
 // ─── Activity Logs ────────────────────────────────────────────────────────────
 
 async function listActivityLogs(query = {}) {
@@ -629,5 +730,9 @@ module.exports = {
   listChats,
   listReports,
   reviewReport,
+  listBlocks,
+  listCategoriesAdmin,
+  createCategory,
+  updateCategory,
   listActivityLogs,
 };
