@@ -74,11 +74,36 @@ function buildPostInclude() {
   };
 }
 
-function shapeOwner(user, postRole) {
+// Profiles store `categories` as raw Category-table UUIDs (multi-select), not slugs/names.
+// Explore/Home filter tabs compare against human-readable slugs/names, so posts need those
+// UUIDs resolved before the frontend can match anything. Batched across a whole list of
+// posts (one query) rather than per-post, to avoid an N+1 query per feed page.
+async function resolveCategoryMap(posts) {
+  const ids = new Set();
+  for (const post of posts) {
+    const u = post?.user;
+    if (!u) continue;
+    (u.creatorProfile?.categories || []).forEach((id) => ids.add(id));
+    (u.freelancerProfile?.categories || []).forEach((id) => ids.add(id));
+  }
+  if (!ids.size) return new Map();
+  const rows = await prisma.category.findMany({
+    where: { id: { in: Array.from(ids) } },
+    select: { id: true, slug: true, name: true },
+  });
+  return new Map(rows.map((r) => [r.id, r]));
+}
+
+function shapeOwner(user, postRole, categoryMap = new Map()) {
   if (!user) return null;
   const role = postRole || user.role;
   const profile = role === ROLES.CREATOR ? user.creatorProfile : user.freelancerProfile;
-  if (!profile) return { id: user.id, role, name: null, profilePicture: null, location: null, languages: null, experience: null, category: null };
+  if (!profile) {
+    return {
+      id: user.id, role, name: null, profilePicture: null, location: null, languages: null,
+      experience: null, category: null, categories: [], categorySlugs: [], categoryNames: [],
+    };
+  }
 
   // Format languages: prefer the array, fall back to single language string
   const langsArr = profile.languages && profile.languages.length > 0
@@ -90,6 +115,9 @@ function shapeOwner(user, postRole) {
   const expKey = profile.experienceLevel ? profile.experienceLevel.toUpperCase() : null;
   const experience = expKey ? (EXP_LABEL[expKey] || profile.experienceLevel) : null;
 
+  const rawCategories = Array.isArray(profile.categories) ? profile.categories : [];
+  const resolvedCategories = rawCategories.map((id) => categoryMap.get(id)).filter(Boolean);
+
   return {
     id: user.id,
     role,
@@ -99,14 +127,16 @@ function shapeOwner(user, postRole) {
     languages,
     experience,
     category: profile.category || null,
-    categories: Array.isArray(profile.categories) ? profile.categories : [],
+    categories: rawCategories,
+    categorySlugs: resolvedCategories.map((c) => c.slug),
+    categoryNames: resolvedCategories.map((c) => c.name),
   };
 }
 
-function shapePost(post) {
+function shapePost(post, categoryMap = new Map()) {
   if (!post) return post;
   const { user, ...rest } = post;
-  return { ...rest, owner: shapeOwner(user, post.role) };
+  return { ...rest, owner: shapeOwner(user, post.role, categoryMap) };
 }
 
 async function createPost(user, data) {
@@ -128,7 +158,7 @@ async function createPost(user, data) {
   await invalidateAllFeeds();
 
   // Notify accepted-collaboration connections about the new post.
-  const shaped = shapePost(post);
+  const shaped = shapePost(post, await resolveCategoryMap([post]));
   const posterName = shaped.owner?.name || 'Someone';
   const preview = data.description ? data.description.slice(0, 60) : 'Check out my new post';
   setImmediate(async () => {
@@ -176,7 +206,7 @@ async function updatePost(user, id, data) {
     include: buildPostInclude(),
   });
   await invalidateAllFeeds();
-  return shapePost(post);
+  return shapePost(post, await resolveCategoryMap([post]));
 }
 
 async function deletePost(user, id) {
@@ -202,7 +232,7 @@ async function getPostById(id) {
     include: buildPostInclude(),
   });
   if (!post) throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
-  return shapePost(post);
+  return shapePost(post, await resolveCategoryMap([post]));
 }
 
 async function listMyPosts(user, query = {}) {
@@ -226,8 +256,9 @@ async function listUserPosts(userId, query = {}) {
     prisma.post.count({ where }),
   ]);
 
+  const categoryMap = await resolveCategoryMap(items);
   return {
-    items: items.map(shapePost),
+    items: items.map((p) => shapePost(p, categoryMap)),
     meta: buildPaginationMeta({ total, page, limit }),
   };
 }
@@ -259,7 +290,8 @@ async function listSavedPosts(userId, query = {}) {
     }),
     prisma.savedPost.count({ where: { userId } }),
   ]);
-  const items = rows.map(r => shapePost(r.post)).filter(Boolean);
+  const categoryMap = await resolveCategoryMap(rows.map((r) => r.post));
+  const items = rows.map(r => shapePost(r.post, categoryMap)).filter(Boolean);
   return { items, meta: buildPaginationMeta({ total, page, limit }) };
 }
 
@@ -284,4 +316,5 @@ module.exports = {
   getSavedPostIds,
   buildPostInclude,
   shapePost,
+  resolveCategoryMap,
 };

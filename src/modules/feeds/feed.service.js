@@ -1,7 +1,7 @@
 const { prisma } = require('../../config/db');
 const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
-const { buildPostInclude, shapePost } = require('../posts/post.service');
+const { buildPostInclude, shapePost, resolveCategoryMap } = require('../posts/post.service');
 const cache = require('../../services/cache/cache.service');
 
 // Feed TTL: 90 seconds — fresh enough for real-time feel, saves massive DB load
@@ -66,8 +66,9 @@ async function getFeed(user, query = {}) {
     prisma.post.count({ where }),
   ]);
 
+  const categoryMap = await resolveCategoryMap(items);
   const result = {
-    items: items.map(shapePost),
+    items: items.map((p) => shapePost(p, categoryMap)),
     meta: buildPaginationMeta({ total, page, limit }),
   };
 

@@ -10,4 +10,9 @@ const createReportSchema = Joi.object({
   reason: Joi.string().trim().min(1).max(500).required(),
 });
 
-module.exports = { createReportSchema };
+const statusQuerySchema = Joi.object({
+  type: Joi.string().valid(...REPORT_TYPES).required(),
+  targetId: uuid.required(),
+});
+
+module.exports = { createReportSchema, statusQuerySchema };
