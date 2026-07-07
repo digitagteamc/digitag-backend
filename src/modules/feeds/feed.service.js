@@ -37,6 +37,10 @@ async function getFeed(user, query = {}) {
     role: { in: targetRoles },
   };
 
+  // Blocked users' posts must never appear in the blocker's feed.
+  const blocks = await prisma.block.findMany({ where: { blockerId: user.id }, select: { blockedId: true } });
+  if (blocks.length) where.userId = { notIn: blocks.map((b) => b.blockedId) };
+
   if (query.collaborationType) where.collaborationType = query.collaborationType;
   if (query.location) where.location = { contains: query.location, mode: 'insensitive' };
   if (query.search) where.description = { contains: query.search, mode: 'insensitive' };
