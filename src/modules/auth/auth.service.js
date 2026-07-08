@@ -6,6 +6,7 @@ const MESSAGES = require('../../constants/messages');
 const env = require('../../config/env');
 const { ROLES } = require('../../constants/roles');
 const admin = require('../../config/firebase');
+const categoryService = require('../categories/category.service');
 
 /**
  * One phone number = one account. The User row's `role` field represents the
@@ -212,6 +213,21 @@ async function getMe(userId) {
         },
     });
     if (!user) throw ApiError.notFound();
+
+    // Profiles store `categories` as raw Category-table UUIDs — resolve them to
+    // slugs/names so the app can actually display them instead of raw ids.
+    const categoryMap = await categoryService.resolveCategoryMap([
+        ...(user.creatorProfile?.categories || []),
+        ...(user.freelancerProfile?.categories || []),
+    ]);
+    const attachResolvedCategories = (profile) => {
+        if (!profile) return profile;
+        const resolved = (profile.categories || []).map((id) => categoryMap.get(id)).filter(Boolean);
+        return { ...profile, categorySlugs: resolved.map((c) => c.slug), categoryNames: resolved.map((c) => c.name) };
+    };
+    user.creatorProfile = attachResolvedCategories(user.creatorProfile);
+    user.freelancerProfile = attachResolvedCategories(user.freelancerProfile);
+
     const sanitized = sanitizeUser(user);
     const profiles = buildProfileMap(user);
     return {

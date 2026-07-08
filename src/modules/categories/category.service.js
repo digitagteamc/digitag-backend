@@ -33,4 +33,18 @@ async function getCategoryById(id) {
   return category;
 }
 
-module.exports = { listCategories, getCategoryById };
+// Profiles store `categories` as raw Category-table UUIDs (multi-select), not
+// slugs/names. Every place that displays a profile's categories needs those
+// UUIDs resolved first. Takes a flat list of ids (possibly with duplicates/
+// nulls) and returns a Map<id, {id,slug,name}> in a single batched query.
+async function resolveCategoryMap(categoryIds) {
+  const unique = Array.from(new Set((categoryIds || []).filter(Boolean)));
+  if (!unique.length) return new Map();
+  const rows = await prisma.category.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, slug: true, name: true },
+  });
+  return new Map(rows.map((r) => [r.id, r]));
+}
+
+module.exports = { listCategories, getCategoryById, resolveCategoryMap };

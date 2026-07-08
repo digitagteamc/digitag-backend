@@ -6,6 +6,7 @@ const { parsePagination, buildPaginationMeta } = require('../../utils/pagination
 const s3UploadService = require('../../services/s3/s3Upload.service');
 const admin = require('../../config/firebase');
 const logger = require('../../utils/logger');
+const categoryService = require('../categories/category.service');
 
 // Lazy require to avoid a circular dependency — feed.service.js requires post.service.js
 // for buildPostInclude/shapePost, so loading invalidateAllFeeds at the top here would grab
@@ -79,19 +80,13 @@ function buildPostInclude() {
 // UUIDs resolved before the frontend can match anything. Batched across a whole list of
 // posts (one query) rather than per-post, to avoid an N+1 query per feed page.
 async function resolveCategoryMap(posts) {
-  const ids = new Set();
+  const ids = [];
   for (const post of posts) {
     const u = post?.user;
     if (!u) continue;
-    (u.creatorProfile?.categories || []).forEach((id) => ids.add(id));
-    (u.freelancerProfile?.categories || []).forEach((id) => ids.add(id));
+    ids.push(...(u.creatorProfile?.categories || []), ...(u.freelancerProfile?.categories || []));
   }
-  if (!ids.size) return new Map();
-  const rows = await prisma.category.findMany({
-    where: { id: { in: Array.from(ids) } },
-    select: { id: true, slug: true, name: true },
-  });
-  return new Map(rows.map((r) => [r.id, r]));
+  return categoryService.resolveCategoryMap(ids);
 }
 
 function shapeOwner(user, postRole, categoryMap = new Map()) {

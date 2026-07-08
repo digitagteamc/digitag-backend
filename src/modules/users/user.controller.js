@@ -13,6 +13,11 @@ const getById = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
+const getByTag = asyncHandler(async (req, res) => {
+  const data = await service.getUserIdByTag(req.params.tagId);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
 const getStats = asyncHandler(async (req, res) => {
   const data = await service.getUserStats(req.params.id);
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
@@ -23,4 +28,4 @@ const getMyStats = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
-module.exports = { onboardingStatus, getById, getStats, getMyStats };
+module.exports = { onboardingStatus, getByTag, getById, getStats, getMyStats };

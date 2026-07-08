@@ -6,6 +6,7 @@ const MESSAGES = require('../../constants/messages');
 const env = require('../../config/env');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
 const cache = require('../../services/cache/cache.service');
+const categoryService = require('../categories/category.service');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -31,17 +32,28 @@ function userBaseInclude() {
         instagramHandle: true, instagramFollowers: true,
         youtubeHandle: true, youtubeFollowers: true,
         twitterHandle: true, snapchatHandle: true, facebookHandle: true,
-        experienceLevel: true, preferredCollabType: true,
+        experienceLevel: true, preferredCollabType: true, categories: true,
       },
     },
     freelancerProfile: {
       select: {
         name: true, email: true, profilePicture: true, location: true,
         skills: true, hourlyRate: true, experienceLevel: true, portfolioUrl: true,
-        availability: true,
+        availability: true, categories: true,
       },
     },
   };
+}
+
+async function resolveUserCategories(users) {
+  const ids = [];
+  for (const u of users) ids.push(...(u.creatorProfile?.categories || []), ...(u.freelancerProfile?.categories || []));
+  return categoryService.resolveCategoryMap(ids);
+}
+
+function shapeProfileCategories(profile, categoryMap) {
+  if (!profile) return [];
+  return (profile.categories || []).map((id) => categoryMap.get(id)?.name).filter(Boolean);
 }
 
 function shapeUser(user) {
@@ -60,7 +72,7 @@ function shapeUser(user) {
   };
 }
 
-function shapeCreator(user) {
+function shapeCreator(user, categoryMap = new Map()) {
   const base = shapeUser(user);
   const cp = user.creatorProfile;
   const socialLinks = [];
@@ -69,21 +81,24 @@ function shapeCreator(user) {
   if (cp?.twitterHandle) socialLinks.push({ platform: 'Twitter', url: `https://twitter.com/${cp.twitterHandle.replace('@', '')}` });
   if (cp?.snapchatHandle) socialLinks.push({ platform: 'Snapchat', url: `https://snapchat.com/add/${cp.snapchatHandle.replace('@', '')}` });
   if (cp?.facebookHandle) socialLinks.push({ platform: 'Facebook', url: `https://facebook.com/${cp.facebookHandle.replace('@', '')}` });
+  const categories = shapeProfileCategories(cp, categoryMap);
   return {
     ...base,
-    category: user.category?.name || null,
+    category: categories[0] || null,
+    categories,
     location: cp?.location || null,
     followers: cp?.instagramFollowers || 0,
     socialLinks,
   };
 }
 
-function shapeFreelancer(user) {
+function shapeFreelancer(user, categoryMap = new Map()) {
   const base = shapeUser(user);
   const fp = user.freelancerProfile;
   return {
     ...base,
     skills: fp?.skills || [],
+    categories: shapeProfileCategories(fp, categoryMap),
     experience: fp?.experienceLevel || null,
     location: fp?.location || null,
     portfolioLinks: fp?.portfolioUrl ? [fp.portfolioUrl] : [],
@@ -377,7 +392,8 @@ async function listCreators(query = {}) {
     prisma.user.count({ where }),
   ]);
 
-  return { items: items.map(shapeCreator), meta: buildPaginationMeta({ total, page, limit }) };
+  const categoryMap = await resolveUserCategories(items);
+  return { items: items.map((u) => shapeCreator(u, categoryMap)), meta: buildPaginationMeta({ total, page, limit }) };
 }
 
 // ─── Freelancers ──────────────────────────────────────────────────────────────
@@ -400,7 +416,8 @@ async function listFreelancers(query = {}) {
     prisma.user.count({ where }),
   ]);
 
-  return { items: items.map(shapeFreelancer), meta: buildPaginationMeta({ total, page, limit }) };
+  const categoryMap = await resolveUserCategories(items);
+  return { items: items.map((u) => shapeFreelancer(u, categoryMap)), meta: buildPaginationMeta({ total, page, limit }) };
 }
 
 // ─── Posts ────────────────────────────────────────────────────────────────────

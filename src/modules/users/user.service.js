@@ -1,6 +1,17 @@
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const { ROLES } = require('../../constants/roles');
+const categoryService = require('../categories/category.service');
+
+async function getUserIdByTag(tagId) {
+  const [creator, freelancer] = await Promise.all([
+    prisma.creatorProfile.findFirst({ where: { tagId: { equals: tagId, mode: 'insensitive' } }, select: { userId: true } }),
+    prisma.freelancerProfile.findFirst({ where: { tagId: { equals: tagId, mode: 'insensitive' } }, select: { userId: true } }),
+  ]);
+  const match = creator || freelancer;
+  if (!match) throw ApiError.notFound('Profile not found');
+  return { userId: match.userId };
+}
 
 async function getUserById(id) {
   const [user, followerCount, followingCount, collabCount] = await Promise.all([
@@ -22,7 +33,27 @@ async function getUserById(id) {
     }),
   ]);
   if (!user) throw ApiError.notFound('User not found');
-  return { ...user, followerCount, followingCount, collabCount };
+
+  // Profiles store `categories` as raw Category-table UUIDs — resolve them to
+  // slugs/names so the app can display them instead of raw ids.
+  const categoryMap = await categoryService.resolveCategoryMap([
+    ...(user.creatorProfile?.categories || []),
+    ...(user.freelancerProfile?.categories || []),
+  ]);
+  const attachResolvedCategories = (profile) => {
+    if (!profile) return profile;
+    const resolved = (profile.categories || []).map((cid) => categoryMap.get(cid)).filter(Boolean);
+    return { ...profile, categorySlugs: resolved.map((c) => c.slug), categoryNames: resolved.map((c) => c.name) };
+  };
+
+  return {
+    ...user,
+    creatorProfile: attachResolvedCategories(user.creatorProfile),
+    freelancerProfile: attachResolvedCategories(user.freelancerProfile),
+    followerCount,
+    followingCount,
+    collabCount,
+  };
 }
 
 async function recomputeProfileCompletion(userId) {
@@ -74,4 +105,4 @@ async function getUserStats(id) {
   return { followerCount, followingCount, collabCount };
 }
 
-module.exports = { getUserById, getUserStats, recomputeProfileCompletion, getOnboardingStatus };
+module.exports = { getUserById, getUserIdByTag, getUserStats, recomputeProfileCompletion, getOnboardingStatus };
