@@ -3,7 +3,7 @@ const Joi = require('joi');
 const rateLimit = require('express-rate-limit');
 
 const controller = require('./feed.controller');
-const { authenticate } = require('../../middlewares/authMiddleware');
+const { optionalAuth } = require('../../middlewares/authMiddleware');
 const { validateRequest } = require('../../middlewares/validateMiddleware');
 const { pagination, uuid } = require('../../validations/common.validation');
 
@@ -25,6 +25,9 @@ const feedQuery = pagination.keys({
   categoryId: uuid.optional(),
 });
 
-router.get('/', authenticate, feedLimiter, validateRequest({ query: feedQuery }), controller.getFeed);
+// Public: browsable without an account (Apple 5.1.1 — non-account-based browsing).
+// Logged-in users still get their normal opposite-role feed; optionalAuth just
+// means a missing/invalid token no longer blocks the request.
+router.get('/', optionalAuth, feedLimiter, validateRequest({ query: feedQuery }), controller.getFeed);
 
 module.exports = router;

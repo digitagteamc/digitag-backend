@@ -15,9 +15,14 @@ async function getUserIdByTag(tagId) {
 
 async function getUserById(id) {
   const [user, followerCount, followingCount, collabCount] = await Promise.all([
+    // This endpoint is publicly browsable (no auth required) — select only
+    // profile-facing fields, never mobileNumber/fcmToken/status/etc.
     prisma.user.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        role: true,
+        createdAt: true,
         category: { select: { id: true, name: true, slug: true } },
         creatorProfile: true,
         freelancerProfile: true,

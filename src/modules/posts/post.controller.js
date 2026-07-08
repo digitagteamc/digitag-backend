@@ -32,7 +32,7 @@ const remove = asyncHandler(async (req, res) => {
 });
 
 const getById = asyncHandler(async (req, res) => {
-  const data = await service.getPostById(req.params.id, req.user.id);
+  const data = await service.getPostById(req.params.id, req.user?.id);
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
@@ -42,7 +42,7 @@ const myPosts = asyncHandler(async (req, res) => {
 });
 
 const userPosts = asyncHandler(async (req, res) => {
-  const { items, meta } = await service.listUserPosts(req.params.userId, req.query, req.user.id);
+  const { items, meta } = await service.listUserPosts(req.params.userId, req.query, req.user?.id);
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
 });
 

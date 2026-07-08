@@ -1,5 +1,5 @@
 const { prisma } = require('../../config/db');
-const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
+const { ROLES, OPPOSITE_FEED_ROLE } = require('../../constants/roles');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
 const { buildPostInclude, shapePost, resolveCategoryMap, notExpiredWhere } = require('../posts/post.service');
 const cache = require('../../services/cache/cache.service');
@@ -22,15 +22,20 @@ function feedCacheKey(userId, role, query) {
 async function getFeed(user, query = {}) {
   // Skip cache for search/filter queries — those need live results
   const isFiltered = query.search || query.location || query.collaborationType || query.categoryId;
-  const cacheKey = feedCacheKey(user.id, user.role, query);
+  // Guests (no account) get an anonymous, uncached view — there's no stable per-viewer
+  // cache identity for them, and volume is low enough that it's not worth inventing one.
+  const cacheKey = user ? feedCacheKey(user.id, user.role, query) : null;
 
-  if (!isFiltered) {
+  if (cacheKey && !isFiltered) {
     const cached = await cache.get(cacheKey);
     if (cached) return cached;
   }
 
   const { skip, take, page, limit } = parsePagination(query);
-  const targetRoles = OPPOSITE_FEED_ROLE[user.role] || [];
+  // A logged-in user sees the opposite role's posts. A guest has no role yet — default
+  // them to the same browsing experience an unregistered visitor lands on elsewhere in
+  // the app (Creator-style tabs), i.e. Freelancer posts, so the feed and tabs agree.
+  const targetRoles = user ? (OPPOSITE_FEED_ROLE[user.role] || []) : OPPOSITE_FEED_ROLE[ROLES.CREATOR];
 
   const where = {
     isActive: true,
@@ -38,9 +43,12 @@ async function getFeed(user, query = {}) {
     ...notExpiredWhere(),
   };
 
-  // Blocked users' posts must never appear in the blocker's feed.
-  const blocks = await prisma.block.findMany({ where: { blockerId: user.id }, select: { blockedId: true } });
-  if (blocks.length) where.userId = { notIn: blocks.map((b) => b.blockedId) };
+  // Blocked users' posts must never appear in the blocker's feed. Guests have no
+  // blocklist of their own.
+  if (user) {
+    const blocks = await prisma.block.findMany({ where: { blockerId: user.id }, select: { blockedId: true } });
+    if (blocks.length) where.userId = { notIn: blocks.map((b) => b.blockedId) };
+  }
 
   if (query.collaborationType) where.collaborationType = query.collaborationType;
   if (query.location) where.location = { contains: query.location, mode: 'insensitive' };
@@ -73,7 +81,7 @@ async function getFeed(user, query = {}) {
     meta: buildPaginationMeta({ total, page, limit }),
   };
 
-  if (!isFiltered) await cache.set(cacheKey, result, FEED_TTL);
+  if (cacheKey && !isFiltered) await cache.set(cacheKey, result, FEED_TTL);
 
   return result;
 }

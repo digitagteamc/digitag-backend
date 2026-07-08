@@ -55,13 +55,33 @@ async function authenticate(req, _res, next) {
   }
 }
 
-function optionalAuth(req, _res, next) {
+// Populates req.user when a valid token is present, but never rejects the
+// request — lets a route serve both logged-in users and anonymous guests
+// (e.g. browsing a profile or the feed without an account).
+async function optionalAuth(req, _res, next) {
   const token = extractToken(req);
   if (!token) return next();
   try {
-    req.tokenPayload = tokenService.verifyAccessToken(token);
+    const payload = tokenService.verifyAccessToken(token);
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        mobileNumber: true,
+        role: true,
+        categoryId: true,
+        isVerified: true,
+        isProfileCompleted: true,
+        status: true,
+        lastActiveAt: true,
+      },
+    });
+    if (user && user.status !== 'SUSPENDED' && user.status !== 'DELETED') {
+      req.user = user;
+      req.tokenPayload = payload;
+    }
   } catch {
-    // ignore — behave as unauthenticated
+    // Invalid/expired token — behave as unauthenticated rather than failing the request
   }
   return next();
 }
