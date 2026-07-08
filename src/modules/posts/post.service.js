@@ -134,6 +134,17 @@ function shapePost(post, categoryMap = new Map()) {
   return { ...rest, owner: shapeOwner(user, post.role, categoryMap) };
 }
 
+// A post with no expiry (boostHours omitted) stays live forever. One that was
+// boosted stops being shown to anyone but its own owner once this time passes.
+function notExpiredWhere() {
+  return { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] };
+}
+
+function boostHoursToExpiresAt(boostHours) {
+  if (!boostHours) return null;
+  return new Date(Date.now() + boostHours * 60 * 60 * 1000);
+}
+
 async function createPost(user, data) {
   const post = await prisma.post.create({
     data: {
@@ -146,6 +157,7 @@ async function createPost(user, data) {
       budget: data.budget || null,
       imageUrl: data.imageUrl || null,
       imageKey: data.imageKey || null,
+      expiresAt: boostHoursToExpiresAt(data.boostHours),
     },
     include: buildPostInclude(),
   });
@@ -195,9 +207,12 @@ async function updatePost(user, id, data) {
     await s3UploadService.deleteObject(existing.imageKey);
   }
 
+  const { boostHours, ...rest } = data;
+  const updateData = boostHours !== undefined ? { ...rest, expiresAt: boostHoursToExpiresAt(boostHours) } : rest;
+
   const post = await prisma.post.update({
     where: { id },
-    data,
+    data: updateData,
     include: buildPostInclude(),
   });
   await invalidateAllFeeds();
@@ -221,24 +236,30 @@ async function deletePost(user, id) {
   await invalidateAllFeeds();
 }
 
-async function getPostById(id) {
+async function getPostById(id, viewerId) {
   const post = await prisma.post.findFirst({
     where: { id, isActive: true },
     include: buildPostInclude(),
   });
   if (!post) throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
+  // A boosted post that's expired is invisible to everyone except its owner.
+  const isExpired = post.expiresAt && post.expiresAt <= new Date();
+  if (isExpired && post.userId !== viewerId) throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
   return shapePost(post, await resolveCategoryMap([post]));
 }
 
 async function listMyPosts(user, query = {}) {
-  return listUserPosts(user.id, query);
+  return listUserPosts(user.id, query, user.id);
 }
 
-async function listUserPosts(userId, query = {}) {
+async function listUserPosts(userId, query = {}, viewerId) {
   const { skip, take, page, limit } = parsePagination(query);
 
   const where = { userId, isActive: true };
   if (query.collaborationType) where.collaborationType = query.collaborationType;
+  // Owners see all of their own posts (including expired boosts); anyone else
+  // browsing someone's posts only sees the ones still live.
+  if (viewerId !== userId) Object.assign(where, notExpiredWhere());
 
   const [items, total] = await Promise.all([
     prisma.post.findMany({
@@ -275,15 +296,16 @@ async function unsavePost(userId, postId) {
 async function listSavedPosts(userId, query = {}) {
   const { limit = 20, page = 1 } = parsePagination(query);
   const skip = (page - 1) * limit;
+  const where = { userId, post: notExpiredWhere() };
   const [rows, total] = await Promise.all([
     prisma.savedPost.findMany({
-      where: { userId },
+      where,
       skip,
       take: limit,
       orderBy: { createdAt: 'desc' },
       include: { post: { include: buildPostInclude() } },
     }),
-    prisma.savedPost.count({ where: { userId } }),
+    prisma.savedPost.count({ where }),
   ]);
   const categoryMap = await resolveCategoryMap(rows.map((r) => r.post));
   const items = rows.map(r => shapePost(r.post, categoryMap)).filter(Boolean);
@@ -312,4 +334,5 @@ module.exports = {
   buildPostInclude,
   shapePost,
   resolveCategoryMap,
+  notExpiredWhere,
 };

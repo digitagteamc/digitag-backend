@@ -1,7 +1,7 @@
 const { prisma } = require('../../config/db');
 const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
-const { buildPostInclude, shapePost, resolveCategoryMap } = require('../posts/post.service');
+const { buildPostInclude, shapePost, resolveCategoryMap, notExpiredWhere } = require('../posts/post.service');
 const cache = require('../../services/cache/cache.service');
 
 // Feed TTL: 90 seconds — fresh enough for real-time feel, saves massive DB load
@@ -35,6 +35,7 @@ async function getFeed(user, query = {}) {
   const where = {
     isActive: true,
     role: { in: targetRoles },
+    ...notExpiredWhere(),
   };
 
   // Blocked users' posts must never appear in the blocker's feed.

@@ -252,6 +252,10 @@ model Post {
   budget            String?
   isActive          Boolean           @default(true)
   isHidden          Boolean           @default(false)
+  // Optional "boost" expiry — null means the post stays live forever. When
+  // set (from the creator's chosen boost duration), the post stops being
+  // shown to other users once this passes, but the owner can still see it.
+  expiresAt         DateTime?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -264,6 +268,7 @@ model Post {
   @@index([isActive])
   @@index([createdAt])
   @@index([role, isActive, createdAt])
+  @@index([expiresAt])
 }
 
 // -------------------------
