@@ -106,6 +106,10 @@ model User {
   categoryId         String?
   isVerified         Boolean    @default(false)
   isProfileCompleted Boolean    @default(false)
+  // Cached from the linked Subscription's status so the rest of the app can check
+  // premium access with a plain field read instead of a join. Kept in sync by the
+  // Razorpay webhook handler whenever the subscription's billing state changes.
+  isPremium          Boolean    @default(false)
   status             UserStatus @default(ACTIVE)
   lastLoginAt        DateTime?
   // Refreshed (throttled) on every authenticated request — drives real "Online" presence,
@@ -136,6 +140,7 @@ model User {
   blocking  Block[] @relation("BlockBlocker")
   blockedBy Block[] @relation("BlockBlocked")
 
+  subscription           Subscription?
   instagramVerifications InstagramVerification[]
   callerCalls            Call[]                  @relation("CallCaller")
   calleeCalls            Call[]                  @relation("CallCallee")
@@ -539,4 +544,34 @@ model Report {
   @@index([type])
   @@index([status])
   @@index([createdAt])
+}
+
+// Mirrors a Razorpay Subscription. One per user — kept in sync via the
+// /webhooks/razorpay endpoint (subscription.activated/charged/cancelled/etc),
+// since Razorpay is the source of truth for billing state.
+enum SubscriptionStatus {
+  CREATED
+  AUTHENTICATED
+  ACTIVE
+  PENDING
+  HALTED
+  CANCELLED
+  COMPLETED
+  EXPIRED
+}
+
+model Subscription {
+  id                     String             @id @default(uuid())
+  userId                 String             @unique
+  razorpaySubscriptionId String             @unique
+  razorpayPlanId         String
+  status                 SubscriptionStatus @default(CREATED)
+  currentStart           DateTime?
+  currentEnd             DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
 }
