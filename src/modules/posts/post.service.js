@@ -4,7 +4,7 @@ const MESSAGES = require('../../constants/messages');
 const { ROLES } = require('../../constants/roles');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
 const s3UploadService = require('../../services/s3/s3Upload.service');
-const admin = require('../../config/firebase');
+const push = require('../../services/push/push.service');
 const logger = require('../../utils/logger');
 const categoryService = require('../categories/category.service');
 
@@ -14,17 +14,6 @@ const categoryService = require('../categories/category.service');
 // loading) sidesteps that.
 function invalidateAllFeeds(...args) {
   return require('../feeds/feed.service').invalidateAllFeeds(...args);
-}
-
-async function sendFcm(fcmToken, data, notification = null) {
-  if (!fcmToken) return;
-  try {
-    const msg = { token: fcmToken, data, android: { priority: 'high' } };
-    if (notification) msg.notification = notification;
-    await admin.messaging().send(msg);
-  } catch (err) {
-    logger.error('[FCM] send failed', { err: err.message });
-  }
 }
 
 const EXP_LABEL = {
@@ -176,17 +165,19 @@ async function createPost(user, data) {
           OR: [{ senderId: user.id }, { receiverId: user.id }],
         },
         select: {
-          sender: { select: { id: true, fcmToken: true } },
-          receiver: { select: { id: true, fcmToken: true } },
+          sender: { select: { id: true } },
+          receiver: { select: { id: true } },
         },
       });
       await Promise.all(
         collabs.map((c) => {
           const other = c.sender.id === user.id ? c.receiver : c.sender;
-          return sendFcm(
-            other.fcmToken,
-            { type: 'NEW_POST', postId: post.id },
-            { title: `${posterName} posted`, body: preview },
+          return push.sendToUser(other.id, (t) =>
+            push.notificationMessage(
+              t,
+              { type: 'NEW_POST', postId: post.id },
+              { title: `${posterName} posted`, body: preview },
+            ),
           );
         }),
       );

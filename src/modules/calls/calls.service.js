@@ -3,7 +3,7 @@ const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const env = require('../../config/env');
-const admin = require('../../config/firebase');
+const push = require('../../services/push/push.service');
 
 const TOKEN_EXPIRY_SECONDS = 3600;
 
@@ -23,22 +23,6 @@ function generateAgoraToken(channelName) {
   );
 }
 
-async function sendFcm(fcmToken, data, notification = null) {
-  if (!fcmToken) return;
-  try {
-    const msg = {
-      token: fcmToken,
-      data,
-      android: { priority: 'high', ttl: 30000 },
-      apns: { headers: { 'apns-priority': '10' } },
-    };
-    if (notification) msg.notification = notification;
-    await admin.messaging().send(msg);
-  } catch (err) {
-    console.error('[Calls] FCM error:', err.message);
-  }
-}
-
 async function initiateCall(callerId, calleeId) {
   if (callerId === calleeId) throw ApiError.badRequest('Cannot call yourself');
 
@@ -53,7 +37,7 @@ async function initiateCall(callerId, calleeId) {
     }),
     prisma.user.findUnique({
       where: { id: calleeId },
-      select: { id: true, fcmToken: true },
+      select: { id: true },
     }),
   ]);
 
@@ -77,18 +61,19 @@ async function initiateCall(callerId, calleeId) {
     caller?.freelancerProfile?.name ||
     'DigiTag User';
 
-  // Data-only message (no `notification` field): on Android, including a
-  // notification payload alongside data suppresses the JS background
-  // handler — the OS just shows a plain banner instead. Keeping this
-  // data-only ensures setBackgroundMessageHandler always fires so we can
-  // display a proper full-screen ringing call notification via notifee.
-  await sendFcm(callee.fcmToken, {
-    type: 'INCOMING_CALL',
-    callId: call.id,
-    channelName,
-    callerName,
-    callerId,
-  });
+  // Data-only at the top level (no `notification` field): on Android, a
+  // notification payload alongside data suppresses the JS background handler,
+  // and we need setBackgroundMessageHandler to fire so notifee can show the
+  // full-screen ringing UI. iOS won't deliver data-only pushes in the
+  // background, so the message carries an APNs alert override — visible
+  // banner + sound — which is what actually makes iPhones ring.
+  await push.sendToUser(calleeId, (token) =>
+    push.callAlertMessage(
+      token,
+      { type: 'INCOMING_CALL', callId: call.id, channelName, callerName, callerId },
+      { title: `📞 ${callerName}`, body: 'Incoming DigiTag call — tap to answer' },
+    ),
+  );
 
   return { callId: call.id, channelName, token, appId: env.AGORA_APP_ID };
 }
@@ -96,7 +81,6 @@ async function initiateCall(callerId, calleeId) {
 async function acceptCall(callId, calleeId) {
   const call = await prisma.call.findFirst({
     where: { id: callId, calleeId, status: 'RINGING' },
-    include: { caller: { select: { fcmToken: true } } },
   });
   if (!call) throw ApiError.notFound('Call not found or already ended');
 
@@ -107,11 +91,9 @@ async function acceptCall(callId, calleeId) {
     data: { status: 'ACTIVE', startedAt: new Date() },
   });
 
-  await sendFcm(call.caller.fcmToken, {
-    type: 'CALL_ACCEPTED',
-    callId,
-    channelName: call.channelName,
-  });
+  await push.sendToUser(call.callerId, (t) =>
+    push.dataMessage(t, { type: 'CALL_ACCEPTED', callId, channelName: call.channelName }),
+  );
 
   return { channelName: call.channelName, token, appId: env.AGORA_APP_ID };
 }
@@ -119,13 +101,14 @@ async function acceptCall(callId, calleeId) {
 async function declineCall(callId, calleeId) {
   const call = await prisma.call.findFirst({
     where: { id: callId, calleeId, status: 'RINGING' },
-    include: { caller: { select: { fcmToken: true } } },
   });
   if (!call) throw ApiError.notFound('Call not found');
 
   await prisma.call.update({ where: { id: callId }, data: { status: 'DECLINED' } });
 
-  await sendFcm(call.caller.fcmToken, { type: 'CALL_DECLINED', callId });
+  await push.sendToUser(call.callerId, (t) =>
+    push.dataMessage(t, { type: 'CALL_DECLINED', callId }),
+  );
 }
 
 async function endCall(callId, userId) {
@@ -140,16 +123,18 @@ async function endCall(callId, userId) {
   });
 
   const otherUserId = call.callerId === userId ? call.calleeId : call.callerId;
-  const other = await prisma.user.findUnique({
-    where: { id: otherUserId },
-    select: { fcmToken: true },
-  });
 
-  await sendFcm(other?.fcmToken, { type: 'CALL_ENDED', callId });
+  await push.sendToUser(otherUserId, (t) =>
+    push.dataMessage(t, { type: 'CALL_ENDED', callId }),
+  );
 }
 
-async function registerFcmToken(userId, fcmToken) {
-  await prisma.user.update({ where: { id: userId }, data: { fcmToken } });
+async function registerFcmToken(userId, fcmToken, platform) {
+  await push.registerDevice(userId, fcmToken, platform);
 }
 
-module.exports = { initiateCall, acceptCall, declineCall, endCall, registerFcmToken };
+async function unregisterFcmToken(userId, fcmToken) {
+  await push.unregisterDevice(userId, fcmToken);
+}
+
+module.exports = { initiateCall, acceptCall, declineCall, endCall, registerFcmToken, unregisterFcmToken };

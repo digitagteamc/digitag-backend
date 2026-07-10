@@ -7,6 +7,7 @@ const router = Router();
 router.use(authenticate);
 
 router.post('/fcm-token', controller.registerFcmToken);
+router.delete('/fcm-token', controller.unregisterFcmToken);
 router.post('/initiate', controller.initiateCall);
 router.post('/:id/accept', controller.acceptCall);
 router.post('/:id/decline', controller.declineCall);

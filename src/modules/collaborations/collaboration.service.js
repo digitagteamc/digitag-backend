@@ -1,19 +1,7 @@
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
-const admin = require('../../config/firebase');
-const logger = require('../../utils/logger');
-
-async function sendFcm(fcmToken, data, notification = null) {
-  if (!fcmToken) return;
-  try {
-    const msg = { token: fcmToken, data, android: { priority: 'high' } };
-    if (notification) msg.notification = notification;
-    await admin.messaging().send(msg);
-  } catch (err) {
-    logger.error('[FCM] send failed', { err: err.message });
-  }
-}
+const push = require('../../services/push/push.service');
 
 const userInclude = {
   select: {
@@ -111,10 +99,12 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
       });
 
   const senderName = collab.sender?.creatorProfile?.name || collab.sender?.freelancerProfile?.name || 'Someone';
-  await sendFcm(
-    collab.receiver?.fcmToken,
-    { type: 'COLLAB_REQUEST', collabId: collab.id },
-    { title: 'New Collaboration Request', body: `${senderName} wants to collaborate with you` },
+  await push.sendToUser(receiverId, (t) =>
+    push.notificationMessage(
+      t,
+      { type: 'COLLAB_REQUEST', collabId: collab.id },
+      { title: 'New Collaboration Request', body: `${senderName} wants to collaborate with you` },
+    ),
   );
 
   return shapeCollab(collab);
@@ -202,10 +192,12 @@ async function respondToCollaboration(userId, collabId, action) {
   const notifBody = nextStatus === 'ACCEPTED'
     ? `${responderName} accepted your collaboration request`
     : `${responderName} declined your collaboration request`;
-  await sendFcm(
-    updated.sender?.fcmToken,
-    { type: nextStatus === 'ACCEPTED' ? 'COLLAB_ACCEPTED' : 'COLLAB_DECLINED', collabId: updated.id },
-    { title: nextStatus === 'ACCEPTED' ? 'Collaboration Accepted!' : 'Collaboration Declined', body: notifBody },
+  await push.sendToUser(updated.senderId, (t) =>
+    push.notificationMessage(
+      t,
+      { type: nextStatus === 'ACCEPTED' ? 'COLLAB_ACCEPTED' : 'COLLAB_DECLINED', collabId: updated.id },
+      { title: nextStatus === 'ACCEPTED' ? 'Collaboration Accepted!' : 'Collaboration Declined', body: notifBody },
+    ),
   );
 
   return shapeCollab(updated);

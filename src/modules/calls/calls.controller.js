@@ -24,8 +24,13 @@ const endCall = asyncHandler(async (req, res) => {
 });
 
 const registerFcmToken = asyncHandler(async (req, res) => {
-  await service.registerFcmToken(req.user.id, req.body.fcmToken);
+  await service.registerFcmToken(req.user.id, req.body.fcmToken, req.body.platform);
   return success(res, { message: 'FCM token registered' });
 });
 
-module.exports = { initiateCall, acceptCall, declineCall, endCall, registerFcmToken };
+const unregisterFcmToken = asyncHandler(async (req, res) => {
+  await service.unregisterFcmToken(req.user.id, req.body.fcmToken);
+  return success(res, { message: 'FCM token unregistered' });
+});
+
+module.exports = { initiateCall, acceptCall, declineCall, endCall, registerFcmToken, unregisterFcmToken };

@@ -141,6 +141,7 @@ model User {
   calleeCalls            Call[]                  @relation("CallCallee")
   reports                Report[]                @relation("ReportReporter")
   savedPosts             SavedPost[]
+  fcmDevices             FcmDevice[]
 
   @@index([role])
   @@index([mobileNumber])
@@ -324,6 +325,24 @@ model RefreshToken {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+// -------------------------
+// Per-device FCM push tokens — one row per logged-in device, so pushes reach
+// every active device and none of the logged-out ones. User.fcmToken is the
+// legacy single-token column, still dual-written for older app builds.
+// -------------------------
+model FcmDevice {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String? // 'ios' | 'android'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // -------------------------

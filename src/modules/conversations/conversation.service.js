@@ -1,21 +1,9 @@
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
-const admin = require('../../config/firebase');
-const logger = require('../../utils/logger');
 const cache = require('../../services/cache/cache.service');
+const push = require('../../services/push/push.service');
 
 const CONVERSATIONS_TTL = 30; // seconds
-
-async function sendFcm(fcmToken, data, notification = null) {
-  if (!fcmToken) return;
-  try {
-    const msg = { token: fcmToken, data, android: { priority: 'high' } };
-    if (notification) msg.notification = notification;
-    await admin.messaging().send(msg);
-  } catch (err) {
-    logger.error('[FCM] send failed', { err: err.message });
-  }
-}
 
 const userInclude = {
   select: {
@@ -169,23 +157,19 @@ async function sendMessage(userId, conversationId, content, imageUrl = null) {
     }),
   ]);
 
-  // Send push notification to the recipient.
+  // Push to every device the recipient is logged in on.
   const otherUserId = conv.participantAId === userId ? conv.participantBId : conv.participantAId;
-  const [senderUser, otherUser] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      select: { creatorProfile: { select: { name: true } }, freelancerProfile: { select: { name: true } } },
-    }),
-    prisma.user.findUnique({
-      where: { id: otherUserId },
-      select: { fcmToken: true },
-    }),
-  ]);
+  const senderUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { creatorProfile: { select: { name: true } }, freelancerProfile: { select: { name: true } } },
+  });
   const senderName = senderUser?.creatorProfile?.name || senderUser?.freelancerProfile?.name || 'Someone';
-  await sendFcm(
-    otherUser?.fcmToken,
-    { type: 'NEW_MESSAGE', conversationId, messageId: message.id },
-    { title: senderName, body: trimmed || '📷 Image' },
+  await push.sendToUser(otherUserId, (t) =>
+    push.notificationMessage(
+      t,
+      { type: 'NEW_MESSAGE', conversationId, messageId: message.id },
+      { title: senderName, body: trimmed || '📷 Image' },
+    ),
   );
 
   // Bust conversation list cache for both participants
