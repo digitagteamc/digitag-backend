@@ -53,7 +53,7 @@ async function listConversations(userId) {
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 1,
-          select: { id: true, content: true, senderId: true, createdAt: true, isRead: true },
+          select: { id: true, content: true, imageUrl: true, isDeleted: true, senderId: true, createdAt: true, isRead: true },
         },
       },
     }),
@@ -117,6 +117,7 @@ async function listMessages(userId, conversationId, { cursor, limit = 50 } = {})
     orderBy: { createdAt: 'desc' },
     take,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+    include: { replyTo: { select: { id: true, content: true, imageUrl: true, senderId: true, isDeleted: true } } },
   });
 
   // Mark incoming messages as read on fetch.
@@ -131,7 +132,7 @@ async function listMessages(userId, conversationId, { cursor, limit = 50 } = {})
   };
 }
 
-async function sendMessage(userId, conversationId, content, imageUrl = null) {
+async function sendMessage(userId, conversationId, content, imageUrl = null, replyToId = null) {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: { collaboration: true },
@@ -146,10 +147,17 @@ async function sendMessage(userId, conversationId, content, imageUrl = null) {
   const trimmed = String(content || '').trim();
   if (!trimmed && !imageUrl) throw ApiError.badRequest('Message content or image is required');
 
+  // A reply may only quote a message from this same conversation.
+  if (replyToId) {
+    const quoted = await prisma.message.findUnique({ where: { id: replyToId }, select: { conversationId: true } });
+    if (!quoted || quoted.conversationId !== conversationId) replyToId = null;
+  }
+
   const now = new Date();
   const [message] = await prisma.$transaction([
     prisma.message.create({
-      data: { conversationId, senderId: userId, content: trimmed || '', imageUrl: imageUrl || null },
+      data: { conversationId, senderId: userId, content: trimmed || '', imageUrl: imageUrl || null, replyToId },
+      include: { replyTo: { select: { id: true, content: true, imageUrl: true, senderId: true, isDeleted: true } } },
     }),
     prisma.conversation.update({
       where: { id: conversationId },

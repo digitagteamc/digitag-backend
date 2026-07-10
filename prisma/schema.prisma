@@ -403,10 +403,15 @@ model Message {
   isDeleted      Boolean  @default(false)
   isEdited       Boolean  @default(false)
   reactions      Json?
+  // WhatsApp-style reply: points at the quoted message. SetNull so deleting the
+  // original leaves the reply intact, just without its quote.
+  replyToId      String?
   createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo      Message?     @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]    @relation("MessageReply")
 
   @@index([conversationId, createdAt])
   @@index([senderId])

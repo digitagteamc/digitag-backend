@@ -4,6 +4,7 @@ const { uuid } = require('../../validations/common.validation');
 const sendMessageSchema = Joi.object({
   content: Joi.string().trim().min(1).max(4000).optional().allow(''),
   imageUrl: Joi.string().uri().max(2000).optional(),
+  replyToId: uuid.optional(),
 }).or('content', 'imageUrl');
 
 const editMessageSchema = Joi.object({

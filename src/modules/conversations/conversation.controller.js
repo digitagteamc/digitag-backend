@@ -19,7 +19,7 @@ const listMessages = asyncHandler(async (req, res) => {
 });
 
 const sendMessage = asyncHandler(async (req, res) => {
-  const data = await service.sendMessage(req.user.id, req.params.id, req.body.content, req.body.imageUrl);
+  const data = await service.sendMessage(req.user.id, req.params.id, req.body.content, req.body.imageUrl, req.body.replyToId);
   return success(res, { statusCode: STATUS.CREATED, message: 'Message sent', data });
 });
 
