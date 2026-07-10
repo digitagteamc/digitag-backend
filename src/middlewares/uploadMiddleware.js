@@ -15,7 +15,10 @@ const ALLOWED_MIME = new Set([
   'image/gif',
 ]);
 
-const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+// The app now resizes/compresses images client-side before upload (both iOS and
+// Android), so this should rarely be hit — kept as a generous safety margin, not
+// the primary size control.
+const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
 function fileFilter(_req, file, cb) {
   if (!ALLOWED_MIME.has(file.mimetype)) {
