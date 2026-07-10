@@ -31,6 +31,12 @@ router.get(
   validateRequest({ params: idParam, query: schemas.listMessagesQuery }),
   controller.listMessages,
 );
+router.get(
+  '/:id/calls',
+  authenticate,
+  validateRequest({ params: idParam }),
+  controller.getCallHistory,
+);
 router.post(
   '/:id/messages',
   authenticate,

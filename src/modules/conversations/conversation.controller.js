@@ -38,4 +38,9 @@ const openWith = asyncHandler(async (req, res) => {
   return success(res, { message: 'Conversation ready', data });
 });
 
-module.exports = { list, getById, listMessages, sendMessage, editMessage, deleteMessage, openWith };
+const getCallHistory = asyncHandler(async (req, res) => {
+  const data = await service.getCallHistory(req.user.id, req.params.id);
+  return success(res, { message: 'Fetched successfully', data });
+});
+
+module.exports = { list, getById, listMessages, sendMessage, editMessage, deleteMessage, openWith, getCallHistory };

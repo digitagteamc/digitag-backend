@@ -103,6 +103,38 @@ async function getConversationById(userId, id) {
   };
 }
 
+/** Call history between this conversation's two participants, for rendering
+ *  inline in the chat thread — a call can happen from a profile/feed screen
+ *  before either side ever opens the chat, so it's looked up by participant
+ *  pair rather than requiring a conversationId on Call itself. */
+async function getCallHistory(userId, conversationId) {
+  const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  if (!conv) throw ApiError.notFound('Conversation not found');
+  if (conv.participantAId !== userId && conv.participantBId !== userId) {
+    throw ApiError.forbidden('Not a participant in this conversation');
+  }
+
+  const { participantAId, participantBId } = conv;
+  return prisma.call.findMany({
+    where: {
+      OR: [
+        { callerId: participantAId, calleeId: participantBId },
+        { callerId: participantBId, calleeId: participantAId },
+      ],
+    },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      callerId: true,
+      calleeId: true,
+      status: true,
+      startedAt: true,
+      endedAt: true,
+      createdAt: true,
+    },
+  });
+}
+
 async function listMessages(userId, conversationId, { cursor, limit = 50 } = {}) {
   const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
   if (!conv) throw ApiError.notFound('Conversation not found');
@@ -273,4 +305,5 @@ module.exports = {
   editMessage,
   deleteMessage,
   openConversationWith,
+  getCallHistory,
 };
