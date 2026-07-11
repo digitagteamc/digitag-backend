@@ -28,9 +28,20 @@ const followers = asyncHandler(async (req, res) => {
   return success(res, { message: 'Fetched successfully', data });
 });
 
+// Another user's public follow lists — same shape as the self variants.
+const userFollowing = asyncHandler(async (req, res) => {
+  const data = await service.listFollowing(req.params.userId);
+  return success(res, { message: 'Fetched successfully', data });
+});
+
+const userFollowers = asyncHandler(async (req, res) => {
+  const data = await service.listFollowers(req.params.userId);
+  return success(res, { message: 'Fetched successfully', data });
+});
+
 const suggestions = asyncHandler(async (req, res) => {
   const data = await service.listSuggestions(req.user.id, req.query);
   return success(res, { message: 'Fetched successfully', data });
 });
 
-module.exports = { follow, unfollow, status, following, followers, suggestions };
+module.exports = { follow, unfollow, status, following, followers, suggestions, userFollowing, userFollowers };

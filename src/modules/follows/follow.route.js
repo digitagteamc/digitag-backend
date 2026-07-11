@@ -16,6 +16,8 @@ router.get('/followers', authenticate, controller.followers);
 router.get('/suggestions', authenticate, validateRequest({ query: limitQuery }), controller.suggestions);
 
 router.get('/:userId/status', authenticate, validateRequest({ params: userIdParam }), controller.status);
+router.get('/:userId/following', authenticate, validateRequest({ params: userIdParam }), controller.userFollowing);
+router.get('/:userId/followers', authenticate, validateRequest({ params: userIdParam }), controller.userFollowers);
 router.post('/:userId', authenticate, validateRequest({ params: userIdParam }), controller.follow);
 router.delete('/:userId', authenticate, validateRequest({ params: userIdParam }), controller.unfollow);
 
