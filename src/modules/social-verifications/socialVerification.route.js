@@ -10,6 +10,9 @@ const platform = Joi.string().valid('YOUTUBE', 'FACEBOOK').required();
 
 router.post('/start', authenticate, validateRequest({ body: Joi.object({ platform }) }), controller.start);
 router.get('/status/:id', authenticate, validateRequest({ params: Joi.object({ id: uuid.required() }) }), controller.status);
-router.get('/callback/:platform', validateRequest({ params: Joi.object({ platform }) }), controller.callback);
+// The redirect_uri we send Google/Facebook is lowercased (see authUrl() in the service —
+// it must exactly match what's registered in each provider's console), so this is the one
+// place platform arrives lowercase. Accept either case and normalize to the enum's casing.
+router.get('/callback/:platform', validateRequest({ params: Joi.object({ platform: platform.insensitive().uppercase() }) }), controller.callback);
 
 module.exports = router;
