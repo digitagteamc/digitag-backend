@@ -16,6 +16,7 @@ const blockRoutes = require('../modules/blocks/block.route');
 const reportRoutes = require('../modules/reports/report.route');
 const searchRoutes = require('../modules/search/search.route');
 const instagramRoutes = require('../modules/instagram/instagram.route');
+const socialVerificationRoutes = require('../modules/social-verifications/socialVerification.route');
 const callRoutes = require('../modules/calls/calls.route');
 
 const router = Router();
@@ -40,6 +41,7 @@ router.use('/blocks', blockRoutes);
 router.use('/reports', reportRoutes);
 router.use('/search', searchRoutes);
 router.use('/instagram', instagramRoutes);
+router.use('/social-verifications', socialVerificationRoutes);
 router.use('/calls', callRoutes);
 
 module.exports = router;

@@ -80,6 +80,14 @@ const env = {
   INSTAGRAM_PAGE_TOKEN: optional('INSTAGRAM_PAGE_TOKEN'), // EAA... Facebook Page token for Business Discovery API
   DIGITAG_INSTAGRAM_USERNAME: optional('DIGITAG_INSTAGRAM_USERNAME', 'digitag.official'),
 
+  // YouTube / Facebook OAuth verification
+  SOCIAL_OAUTH_REDIRECT_URI: optional('SOCIAL_OAUTH_REDIRECT_URI'), // e.g. https://api.digitag.app/api/v1/social-verifications/callback
+  APP_DEEP_LINK_URL: optional('APP_DEEP_LINK_URL', 'digitag://social-verify'),
+  GOOGLE_OAUTH_CLIENT_ID: optional('GOOGLE_OAUTH_CLIENT_ID'),
+  GOOGLE_OAUTH_CLIENT_SECRET: optional('GOOGLE_OAUTH_CLIENT_SECRET'),
+  FACEBOOK_APP_ID: optional('FACEBOOK_APP_ID'),
+  FACEBOOK_APP_SECRET: optional('FACEBOOK_APP_SECRET'),
+
   // Agora
   AGORA_APP_ID: optional('AGORA_APP_ID'),
   AGORA_APP_CERTIFICATE: optional('AGORA_APP_CERTIFICATE'),
