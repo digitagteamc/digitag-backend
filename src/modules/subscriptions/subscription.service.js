@@ -1,3 +1,4 @@
+/* global Buffer */
 const crypto = require('crypto');
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
