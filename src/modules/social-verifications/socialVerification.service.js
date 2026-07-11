@@ -50,7 +50,14 @@ async function socialAccount(platform, code) {
   }
   if (platform === 'YOUTUBE') {
     const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true&access_token=${encodeURIComponent(accessToken)}`);
-    const data = await res.json(); const channel = data.items?.[0];
+    const data = await res.json();
+    if (data.error) {
+      // e.g. the YouTube Data API not being enabled in the Cloud project looks
+      // identical to "no channel" unless we surface the API's own error.
+      logger.error('[social verification] YouTube API error', { code: data.error.code, message: data.error.message });
+      throw ApiError.badRequest('Could not read the YouTube channel for this account');
+    }
+    const channel = data.items?.[0];
     if (!channel?.id) throw ApiError.badRequest('No YouTube channel was found for this Google account');
     return { id: channel.id, name: channel.snippet?.title || channel.id, followers: Number(channel.statistics?.subscriberCount) || null };
   }
