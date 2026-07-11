@@ -59,7 +59,10 @@ async function socialAccount(platform, code) {
     }
     const channel = data.items?.[0];
     if (!channel?.id) throw ApiError.badRequest('No YouTube channel was found for this Google account');
-    return { id: channel.id, name: channel.snippet?.title || channel.id, followers: Number(channel.statistics?.subscriberCount) || null };
+    // Prefer the human @handle for the stored profile field — raw UC… channel IDs
+    // don't resolve under youtube.com/@…. Dedupe still keys on the immutable id.
+    const handle = (channel.snippet?.customUrl || '').replace(/^@/, '') || channel.id;
+    return { id: channel.id, handle, name: channel.snippet?.title || channel.id, followers: Number(channel.statistics?.subscriberCount) || null };
   }
   const res = await fetch(`https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${encodeURIComponent(accessToken)}`);
   const data = await res.json(); if (!data.id) throw ApiError.badRequest('Facebook account could not be read');
@@ -73,7 +76,7 @@ async function complete(platform, query) {
     const existing = await prisma.socialVerification.findFirst({ where: { platform, socialAccountId: account.id, status: 'VERIFIED', NOT: { userId: record.userId } } });
     if (existing) throw ApiError.conflict('This social account is already verified by another DigiTag user');
     await prisma.socialVerification.update({ where: { id }, data: { status: 'VERIFIED', socialAccountId: account.id, accountName: account.name, verifiedAt: new Date() } });
-    const data = platform === 'YOUTUBE' ? { youtubeHandle: account.id, ...(account.followers !== null ? { youtubeFollowers: account.followers } : {}) } : { facebookHandle: account.id };
+    const data = platform === 'YOUTUBE' ? { youtubeHandle: account.handle || account.id, ...(account.followers !== null ? { youtubeFollowers: account.followers } : {}) } : { facebookHandle: account.id };
     await prisma.user.findUnique({ where: { id: record.userId }, select: { role: true } }).then((user) => user?.role === 'CREATOR' ? prisma.creatorProfile.updateMany({ where: { userId: record.userId }, data }) : prisma.freelancerProfile.updateMany({ where: { userId: record.userId }, data }));
     return { id, status: 'VERIFIED' };
   } catch (error) {
