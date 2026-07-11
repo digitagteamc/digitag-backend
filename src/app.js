@@ -23,7 +23,10 @@ app.use(
   }),
 );
 app.use(compression());
-app.use(express.json({ limit: '5mb' }));
+// Stash the raw body bytes alongside the parsed JSON — the Razorpay webhook handler
+// needs the exact raw bytes to verify the X-Razorpay-Signature HMAC; re-serializing
+// req.body wouldn't byte-for-byte match what Razorpay signed.
+app.use(express.json({ limit: '5mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 if (!env.isTest) {

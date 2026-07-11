@@ -91,6 +91,13 @@ const env = {
   // Agora
   AGORA_APP_ID: optional('AGORA_APP_ID'),
   AGORA_APP_CERTIFICATE: optional('AGORA_APP_CERTIFICATE'),
+
+  RAZORPAY: {
+    keyId: optional('RAZORPAY_KEY_ID'),
+    keySecret: optional('RAZORPAY_KEY_SECRET'),
+    planId: optional('RAZORPAY_PLAN_ID'),
+    webhookSecret: optional('RAZORPAY_WEBHOOK_SECRET'),
+  },
 };
 
 env.isProduction = env.NODE_ENV === 'production';

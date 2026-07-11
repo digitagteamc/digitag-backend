@@ -18,6 +18,8 @@ const searchRoutes = require('../modules/search/search.route');
 const instagramRoutes = require('../modules/instagram/instagram.route');
 const socialVerificationRoutes = require('../modules/social-verifications/socialVerification.route');
 const callRoutes = require('../modules/calls/calls.route');
+const subscriptionRoutes = require('../modules/subscriptions/subscription.route');
+const subscriptionWebhookRoutes = require('../modules/subscriptions/subscription.webhook.route');
 
 const router = Router();
 
@@ -43,5 +45,7 @@ router.use('/search', searchRoutes);
 router.use('/instagram', instagramRoutes);
 router.use('/social-verifications', socialVerificationRoutes);
 router.use('/calls', callRoutes);
+router.use('/subscriptions', subscriptionRoutes);
+router.use('/webhooks', subscriptionWebhookRoutes);
 
 module.exports = router;
