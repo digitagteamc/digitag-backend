@@ -75,6 +75,10 @@ async function complete(platform, query) {
     const account = await socialAccount(platform, query.code);
     const existing = await prisma.socialVerification.findFirst({ where: { platform, socialAccountId: account.id, status: 'VERIFIED', NOT: { userId: record.userId } } });
     if (existing) throw ApiError.conflict('This social account is already verified by another DigiTag user');
+    // Drop the user's own previous verification for this platform — the unique
+    // (platform, socialAccountId) index otherwise makes every re-verification of
+    // the same account fail on the old VERIFIED row.
+    await prisma.socialVerification.deleteMany({ where: { userId: record.userId, platform, status: 'VERIFIED' } });
     await prisma.socialVerification.update({ where: { id }, data: { status: 'VERIFIED', socialAccountId: account.id, accountName: account.name, verifiedAt: new Date() } });
     const data = platform === 'YOUTUBE' ? { youtubeHandle: account.handle || account.id, ...(account.followers !== null ? { youtubeFollowers: account.followers } : {}) } : { facebookHandle: account.id };
     await prisma.user.findUnique({ where: { id: record.userId }, select: { role: true } }).then((user) => user?.role === 'CREATOR' ? prisma.creatorProfile.updateMany({ where: { userId: record.userId }, data }) : prisma.freelancerProfile.updateMany({ where: { userId: record.userId }, data }));
