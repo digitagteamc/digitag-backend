@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const env = require('../../config/env');
+const logger = require('../../utils/logger');
 
 const EXPIRY_MS = 10 * 60 * 1000;
 const stateSecret = () => env.JWT_ACCESS_SECRET;
@@ -43,7 +44,10 @@ async function socialAccount(platform, code) {
   const tokenRes = await fetch(platform === 'YOUTUBE' ? tokenEndpoint : facebookTokenUrl, { method: platform === 'YOUTUBE' ? 'POST' : 'GET', headers: platform === 'YOUTUBE' ? { 'Content-Type': 'application/x-www-form-urlencoded' } : undefined, body: platform === 'YOUTUBE' ? new URLSearchParams(params) : undefined });
   const tokenData = await tokenRes.json();
   const accessToken = tokenData.access_token;
-  if (!accessToken) throw ApiError.badRequest('Account authorization was not completed');
+  if (!accessToken) {
+    logger.error('[social verification] token exchange failed', { platform, response: tokenData });
+    throw ApiError.badRequest('Account authorization was not completed');
+  }
   if (platform === 'YOUTUBE') {
     const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true&access_token=${encodeURIComponent(accessToken)}`);
     const data = await res.json(); const channel = data.items?.[0];
@@ -65,7 +69,11 @@ async function complete(platform, query) {
     const data = platform === 'YOUTUBE' ? { youtubeHandle: account.id, ...(account.followers !== null ? { youtubeFollowers: account.followers } : {}) } : { facebookHandle: account.id };
     await prisma.user.findUnique({ where: { id: record.userId }, select: { role: true } }).then((user) => user?.role === 'CREATOR' ? prisma.creatorProfile.updateMany({ where: { userId: record.userId }, data }) : prisma.freelancerProfile.updateMany({ where: { userId: record.userId }, data }));
     return { id, status: 'VERIFIED' };
-  } catch (_error) { await prisma.socialVerification.update({ where: { id }, data: { status: 'FAILED' } }); return { id, status: 'FAILED' }; }
+  } catch (error) {
+    logger.error('[social verification] completion failed', { id, platform, err: error.message });
+    await prisma.socialVerification.update({ where: { id }, data: { status: 'FAILED' } });
+    return { id, status: 'FAILED' };
+  }
 }
 async function status(userId, id) { const record = await prisma.socialVerification.findFirst({ where: { id, userId } }); if (!record) throw ApiError.notFound('Verification record not found'); if (record.status === 'PENDING' && record.expiresAt < new Date()) return prisma.socialVerification.update({ where: { id }, data: { status: 'EXPIRED' } }); return record; }
 const appRedirect = (id, status) => `${env.APP_DEEP_LINK_URL}?id=${encodeURIComponent(id)}&status=${encodeURIComponent(status)}`;
