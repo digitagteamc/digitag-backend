@@ -1,3 +1,4 @@
+/* global Buffer */
 const crypto = require('crypto');
 
 function generateNumericOtp(length = 6) {
