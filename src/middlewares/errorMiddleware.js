@@ -2,6 +2,7 @@ const { ApiError, failure } = require('../utils/apiResponse');
 const STATUS = require('../constants/statusCodes');
 const MESSAGES = require('../constants/messages');
 const logger = require('../utils/logger');
+const Sentry = require('../config/sentry');
 const env = require('../config/env');
 
 function notFoundHandler(_req, res) {
@@ -43,6 +44,9 @@ function errorHandler(err, req, res, _next) {
     path: req.path,
     method: req.method,
   });
+  // Only genuinely unhandled errors reach here — operational ApiErrors returned
+  // above never hit Sentry, so the feed stays signal, not noise.
+  Sentry.captureException(err, { extra: { path: req.path, method: req.method } });
 
   return failure(res, {
     statusCode: STATUS.INTERNAL,

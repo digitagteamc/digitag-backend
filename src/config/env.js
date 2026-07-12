@@ -72,6 +72,9 @@ const env = {
 
   LOG_LEVEL: optional('LOG_LEVEL', 'info'),
 
+  // Error monitoring (no-op when unset)
+  SENTRY_DSN: optional('SENTRY_DSN'),
+
   // Instagram DM Verification
   INSTAGRAM_VERIFY_TOKEN: optional('INSTAGRAM_VERIFY_TOKEN', 'digitag_ig_verify_token'),
   INSTAGRAM_APP_SECRET: optional('INSTAGRAM_APP_SECRET'),
