@@ -137,4 +137,16 @@ async function unregisterFcmToken(userId, fcmToken) {
   await push.unregisterDevice(userId, fcmToken);
 }
 
-module.exports = { initiateCall, acceptCall, declineCall, endCall, registerFcmToken, unregisterFcmToken };
+// Lets the callee check whether a call is still ringing before showing the
+// incoming-call UI — a stale notification tap otherwise rings forever for a
+// call that already ended.
+async function getCall(callId, userId) {
+  const call = await prisma.call.findFirst({
+    where: { id: callId, OR: [{ callerId: userId }, { calleeId: userId }] },
+    select: { id: true, status: true, callerId: true, calleeId: true, startedAt: true, endedAt: true },
+  });
+  if (!call) throw ApiError.notFound('Call not found');
+  return call;
+}
+
+module.exports = { initiateCall, acceptCall, declineCall, endCall, registerFcmToken, unregisterFcmToken, getCall };
