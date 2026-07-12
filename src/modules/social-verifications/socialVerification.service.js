@@ -26,7 +26,13 @@ function configured(platform) {
 function authUrl(platform, state) {
   const redirect = encodeURIComponent(`${env.SOCIAL_OAUTH_REDIRECT_URI.replace(/\/$/, '')}/${platform.toLowerCase()}`);
   if (platform === 'YOUTUBE') return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(env.GOOGLE_OAUTH_CLIENT_ID)}&redirect_uri=${redirect}&response_type=code&scope=${encodeURIComponent('https://www.googleapis.com/auth/youtube.readonly')}&access_type=online&state=${encodeURIComponent(state)}`;
-  return `https://www.facebook.com/v21.0/dialog/oauth?client_id=${encodeURIComponent(env.FACEBOOK_APP_ID)}&redirect_uri=${redirect}&state=${encodeURIComponent(state)}&scope=public_profile`;
+  // "Facebook Login for Business" apps reject plain scopes — they require a
+  // dashboard-created Configuration passed as config_id, which defines the
+  // permissions itself. Classic Facebook Login apps use scope as usual.
+  const fbAuth = platform === 'FACEBOOK' && env.FACEBOOK_LOGIN_CONFIG_ID
+    ? `config_id=${encodeURIComponent(env.FACEBOOK_LOGIN_CONFIG_ID)}`
+    : 'scope=public_profile';
+  return `https://www.facebook.com/v21.0/dialog/oauth?client_id=${encodeURIComponent(env.FACEBOOK_APP_ID)}&redirect_uri=${redirect}&state=${encodeURIComponent(state)}&response_type=code&${fbAuth}`;
 }
 async function start(userId, platform) {
   if (!configured(platform)) throw ApiError.internal(`${platform === 'YOUTUBE' ? 'YouTube' : 'Facebook'} verification is not configured yet`);
