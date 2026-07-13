@@ -29,9 +29,13 @@ function authUrl(platform, state) {
   // "Facebook Login for Business" apps reject plain scopes — they require a
   // dashboard-created Configuration passed as config_id, which defines the
   // permissions itself. Classic Facebook Login apps use scope as usual.
+  // pages_show_list needs its own Meta App Review (Advanced Access) — only
+  // request it once that's approved, or every login gets stuck for non-admins
+  // the same way public_profile did before business verification.
+  const fbScopes = env.FACEBOOK_PAGES_ENABLED ? 'public_profile,pages_show_list' : 'public_profile';
   const fbAuth = platform === 'FACEBOOK' && env.FACEBOOK_LOGIN_CONFIG_ID
     ? `config_id=${encodeURIComponent(env.FACEBOOK_LOGIN_CONFIG_ID)}`
-    : 'scope=public_profile';
+    : `scope=${fbScopes}`;
   return `https://www.facebook.com/v21.0/dialog/oauth?client_id=${encodeURIComponent(env.FACEBOOK_APP_ID)}&redirect_uri=${redirect}&state=${encodeURIComponent(state)}&response_type=code&${fbAuth}`;
 }
 async function start(userId, platform) {
@@ -69,6 +73,17 @@ async function socialAccount(platform, code) {
     // don't resolve under youtube.com/@…. Dedupe still keys on the immutable id.
     const handle = (channel.snippet?.customUrl || '').replace(/^@/, '') || channel.id;
     return { id: channel.id, handle, name: channel.snippet?.title || channel.id, followers: Number(channel.statistics?.subscriberCount) || null };
+  }
+  // Prefer a Page the user manages (a real public presence) over their personal
+  // profile, when pages_show_list is enabled and approved. Falls through to the
+  // personal profile below if they have none, or the permission isn't granted
+  // yet (pre-approval logins, or the user simply denied that specific scope).
+  if (env.FACEBOOK_PAGES_ENABLED) {
+    const pagesRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts?fields=id,name&access_token=${encodeURIComponent(accessToken)}`);
+    const pagesData = await pagesRes.json();
+    const page = pagesData.data?.[0];
+    if (page?.id) return { id: page.id, name: page.name || page.id, followers: null };
+    if (pagesData.error) logger.warn('[social verification] pages_show_list unavailable, falling back to profile', { message: pagesData.error.message });
   }
   const res = await fetch(`https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${encodeURIComponent(accessToken)}`);
   const data = await res.json(); if (!data.id) throw ApiError.badRequest('Facebook account could not be read');

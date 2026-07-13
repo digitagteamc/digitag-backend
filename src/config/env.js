@@ -91,6 +91,9 @@ const env = {
   FACEBOOK_APP_ID: optional('FACEBOOK_APP_ID'),
   FACEBOOK_APP_SECRET: optional('FACEBOOK_APP_SECRET'),
   FACEBOOK_LOGIN_CONFIG_ID: optional('FACEBOOK_LOGIN_CONFIG_ID'), // required for "Facebook Login for Business" apps
+  // Off by default — pages_show_list needs its own Meta App Review before it
+  // works for anyone but app admins/testers. Flip to 'true' once approved.
+  FACEBOOK_PAGES_ENABLED: optional('FACEBOOK_PAGES_ENABLED') === 'true',
 
   // Agora
   AGORA_APP_ID: optional('AGORA_APP_ID'),
