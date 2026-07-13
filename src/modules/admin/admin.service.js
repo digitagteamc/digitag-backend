@@ -74,13 +74,18 @@ function shapeUser(user) {
   const cp = user.creatorProfile;
   const fp = user.freelancerProfile;
   const profile = cp || fp;
+  // Deleted accounts tombstone their number as `deleted:<ts>:<original>` to
+  // free the unique slot for re-registration — show admins the original.
+  const rawNumber = user.mobileNumber.startsWith('deleted:')
+    ? user.mobileNumber.split(':').slice(2).join(':')
+    : user.mobileNumber;
   return {
     id: user.id,
     name: profile?.name || null,
     email: profile?.email || null,
-    phone: `${user.countryCode}${user.mobileNumber}`,
+    phone: `${user.countryCode}${rawNumber}`,
     role: user.role.toLowerCase(),
-    status: user.status === 'ACTIVE' ? 'active' : 'suspended',
+    status: user.status === 'ACTIVE' ? 'active' : user.status === 'DELETED' ? 'deleted' : 'suspended',
     joinedAt: user.createdAt.toISOString(),
     avatar: profile?.profilePicture || null,
   };
@@ -516,10 +521,13 @@ async function listUsers(query = {}) {
 
   // Validator only allows CREATOR/FREELANCER/BRAND/AGENCY, so assigning role directly is safe.
   // Without a role filter, exclude ADMIN accounts explicitly.
-  const where = { status: { not: 'DELETED' } };
+  // Deleted accounts stay listed — their rows are retained specifically so
+  // the admin panel keeps full history after a user deletes their account.
+  const where = {};
   where.role = role ? role : { not: 'ADMIN' };
   if (status === 'active') where.status = 'ACTIVE';
   if (status === 'suspended') where.status = 'SUSPENDED';
+  if (status === 'deleted') where.status = 'DELETED';
   if (search) {
     where.OR = [
       { mobileNumber: { contains: search } },
@@ -540,7 +548,7 @@ async function listUsers(query = {}) {
 
 async function getUserById(id) {
   const user = await prisma.user.findUnique({ where: { id }, include: userBaseInclude() });
-  if (!user || user.status === 'DELETED') throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
+  if (!user) throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
   return shapeUser(user);
 }
 

@@ -1,6 +1,7 @@
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
+const { assertNotBlocked } = require('../blocks/block.service');
 
 const userInclude = {
   select: {
@@ -27,6 +28,7 @@ function shapeUser(u) {
 
 async function follow(followerId, followingId, followerRole) {
   if (followerId === followingId) throw ApiError.badRequest('Cannot follow yourself');
+  await assertNotBlocked(followerId, followingId);
   const other = await prisma.user.findUnique({ where: { id: followingId } });
   if (!other) throw ApiError.notFound('User not found');
 

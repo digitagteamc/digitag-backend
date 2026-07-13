@@ -4,6 +4,7 @@ const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const env = require('../../config/env');
 const push = require('../../services/push/push.service');
+const { assertNotBlocked } = require('../blocks/block.service');
 
 const TOKEN_EXPIRY_SECONDS = 3600;
 
@@ -25,6 +26,7 @@ function generateAgoraToken(channelName) {
 
 async function initiateCall(callerId, calleeId) {
   if (callerId === calleeId) throw ApiError.badRequest('Cannot call yourself');
+  await assertNotBlocked(callerId, calleeId);
 
   const [caller, callee] = await Promise.all([
     prisma.user.findUnique({

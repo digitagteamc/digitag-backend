@@ -89,4 +89,28 @@ async function status(blockerId, blockedId) {
   return { isBlocked: !!row };
 }
 
-module.exports = { block, unblock, listBlocked, status };
+/** True if either user has blocked the other. Contact is cut both ways —
+ *  if only the blocked side were stopped, the blocker's own messages going
+ *  through while the other's fail would leak who blocked whom. */
+async function isBlockedBetween(userIdA, userIdB) {
+  const row = await prisma.block.findFirst({
+    where: {
+      OR: [
+        { blockerId: userIdA, blockedId: userIdB },
+        { blockerId: userIdB, blockedId: userIdA },
+      ],
+    },
+    select: { id: true },
+  });
+  return !!row;
+}
+
+/** Guard for every contact path (messages, calls, collab requests, follows).
+ *  Deliberately vague message — never reveals who blocked whom. */
+async function assertNotBlocked(userIdA, userIdB) {
+  if (await isBlockedBetween(userIdA, userIdB)) {
+    throw ApiError.forbidden('You cannot interact with this user');
+  }
+}
+
+module.exports = { block, unblock, listBlocked, status, isBlockedBetween, assertNotBlocked };

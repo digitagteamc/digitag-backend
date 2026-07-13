@@ -2,6 +2,7 @@ const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
 const push = require('../../services/push/push.service');
+const { assertNotBlocked } = require('../blocks/block.service');
 
 const userInclude = {
   select: {
@@ -54,6 +55,7 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
   if (senderId === receiverId) {
     throw ApiError.badRequest('You cannot send a collaboration request to yourself');
   }
+  await assertNotBlocked(senderId, receiverId);
 
   const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
   if (!receiver) throw ApiError.notFound('Recipient user not found');

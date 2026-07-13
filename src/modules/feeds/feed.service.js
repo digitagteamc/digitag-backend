@@ -43,11 +43,17 @@ async function getFeed(user, query = {}) {
     ...notExpiredWhere(),
   };
 
-  // Blocked users' posts must never appear in the blocker's feed. Guests have no
-  // blocklist of their own.
+  // Blocks cut visibility both ways: posts of anyone I blocked AND anyone who
+  // blocked me disappear from my feed. Guests have no blocklist of their own.
   if (user) {
-    const blocks = await prisma.block.findMany({ where: { blockerId: user.id }, select: { blockedId: true } });
-    if (blocks.length) where.userId = { notIn: blocks.map((b) => b.blockedId) };
+    const blocks = await prisma.block.findMany({
+      where: { OR: [{ blockerId: user.id }, { blockedId: user.id }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    if (blocks.length) {
+      const hiddenIds = blocks.map((b) => (b.blockerId === user.id ? b.blockedId : b.blockerId));
+      where.userId = { notIn: hiddenIds };
+    }
   }
 
   if (query.collaborationType) where.collaborationType = query.collaborationType;

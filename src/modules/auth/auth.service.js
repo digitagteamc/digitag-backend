@@ -7,6 +7,8 @@ const env = require('../../config/env');
 const { ROLES } = require('../../constants/roles');
 const admin = require('../../config/firebase');
 const categoryService = require('../categories/category.service');
+const razorpay = require('../../config/razorpay');
+const logger = require('../../utils/logger');
 
 /**
  * One phone number = one account. The User row's `role` field represents the
@@ -263,26 +265,91 @@ async function switchRole(userId, role) {
     };
 }
 
+// Subscription states where Razorpay could still charge — must be cancelled
+// at Razorpay before the account row is tombstoned, or billing outlives the account.
+const BILLABLE_SUBSCRIPTION_STATES = new Set(['CREATED', 'AUTHENTICATED', 'ACTIVE', 'PENDING', 'HALTED']);
+
 /**
- * Permanently deletes the user's account and all associated data.
- * Cascades via Prisma schema relations (posts, messages, profiles, tokens).
- * Google Play requires self-service account deletion — this powers that button.
+ * Deletes the user's account — soft-delete + anonymize, NOT a row wipe:
+ *
+ * - The row (and their posts/messages/collabs/reports) is KEPT for the admin
+ *   panel, marked status=DELETED so the app treats it as gone everywhere.
+ * - Identity is tombstoned: mobileNumber and profile tagIds are renamed to
+ *   `deleted:<ts>:<original>`, which frees the unique slots — the same person
+ *   signing up again with the same number starts as a brand-new user with no
+ *   history attached, while admins can still read the original value inside
+ *   the tombstone.
+ * - Social verifications are removed so the same Instagram/YouTube/Facebook
+ *   account can be re-verified by the returning "new" user.
+ * - Any billable Razorpay subscription is cancelled first so a deleted
+ *   account can never keep getting charged.
+ *
+ * Google Play/App Store require self-service account deletion — this powers it.
  */
 async function deleteAccount(userId) {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw ApiError.notFound('Account not found');
-
-    // Soft-delete first so in-flight sessions get a clear error, then hard-delete
-    await prisma.user.update({ where: { id: userId }, data: { status: 'DELETED' } });
-
-    // Revoke all refresh tokens so existing sessions can't be used
-    await prisma.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+            subscription: true,
+            creatorProfile: { select: { tagId: true } },
+            freelancerProfile: { select: { tagId: true } },
+        },
     });
+    if (!user) throw ApiError.notFound('Account not found');
+    if (user.status === 'DELETED') return; // idempotent
 
-    // Hard delete — Prisma cascade handles profiles, posts, messages, collaborations
-    await prisma.user.delete({ where: { id: userId } });
+    // 1. Stop billing before anything else — if this account has a live
+    //    subscription and Razorpay is unreachable, abort rather than strand
+    //    a recurring charge on an account that no longer exists in the app.
+    if (user.subscription && BILLABLE_SUBSCRIPTION_STATES.has(user.subscription.status)) {
+        try {
+            await razorpay.subscriptions.cancel(user.subscription.razorpaySubscriptionId);
+        } catch (err) {
+            // Already-cancelled/completed on Razorpay's side is fine; anything
+            // else must fail the deletion so billing can't outlive the account.
+            const desc = String(err?.error?.description || err?.message || '');
+            if (!/not cancellable|already cancelled|completed|expired/i.test(desc)) {
+                logger.error('[deleteAccount] Razorpay cancel failed', { userId, err: desc });
+                throw ApiError.internal('Could not cancel your subscription. Please try again or contact support.');
+            }
+        }
+        await prisma.subscription.update({ where: { userId }, data: { status: 'CANCELLED' } });
+    }
+
+    const stamp = Date.now();
+    const tombstone = (value) => `deleted:${stamp}:${value}`;
+
+    await prisma.$transaction([
+        // 2. Tombstone identity — frees the unique mobileNumber/tagId slots.
+        prisma.user.update({
+            where: { id: userId },
+            data: {
+                status: 'DELETED',
+                mobileNumber: tombstone(user.mobileNumber),
+                fcmToken: null,
+                isPremium: false,
+            },
+        }),
+        ...(user.creatorProfile?.tagId
+            ? [prisma.creatorProfile.update({ where: { userId }, data: { tagId: tombstone(user.creatorProfile.tagId) } })]
+            : []),
+        ...(user.freelancerProfile?.tagId
+            ? [prisma.freelancerProfile.update({ where: { userId }, data: { tagId: tombstone(user.freelancerProfile.tagId) } })]
+            : []),
+        // 3. Kill every session and push target.
+        prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } }),
+        prisma.fcmDevice.deleteMany({ where: { userId } }),
+        // 4. Hide their content from the app (rows kept for admin).
+        prisma.post.updateMany({ where: { userId }, data: { isActive: false } }),
+        // 5. Remove social-graph edges and personal lists.
+        prisma.follow.deleteMany({ where: { OR: [{ followerId: userId }, { followingId: userId }] } }),
+        prisma.block.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }),
+        prisma.savedPost.deleteMany({ where: { userId } }),
+        prisma.notification.deleteMany({ where: { userId } }),
+        // 6. Free social identities for re-verification by the returning user.
+        prisma.socialVerification.deleteMany({ where: { userId } }),
+        prisma.instagramVerification.deleteMany({ where: { userId } }),
+    ]);
 }
 
 function sanitizeUser(user) {

@@ -10,7 +10,7 @@ const listQuery = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(20),
   search: Joi.string().trim().max(200).optional().allow(''),
   role: Joi.string().valid('CREATOR', 'FREELANCER', 'BRAND', 'AGENCY').optional(),
-  status: Joi.string().valid('active', 'suspended').optional(),
+  status: Joi.string().valid('active', 'suspended', 'deleted').optional(),
 });
 
 const postListQuery = Joi.object({

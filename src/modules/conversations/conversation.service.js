@@ -2,6 +2,7 @@ const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const cache = require('../../services/cache/cache.service');
 const push = require('../../services/push/push.service');
+const { assertNotBlocked } = require('../blocks/block.service');
 
 const CONVERSATIONS_TTL = 30; // seconds
 
@@ -9,6 +10,7 @@ const userInclude = {
   select: {
     id: true,
     role: true,
+    status: true,
     mobileNumber: true,
     fcmToken: true,
     lastLoginAt: true,
@@ -27,6 +29,20 @@ function orderedPair(userIdA, userIdB) {
 
 function shapeParticipant(user) {
   if (!user) return null;
+  // A deleted account keeps its rows for the admin panel, but the app must
+  // never surface its old identity — the other party just sees a tombstone.
+  if (user.status === 'DELETED') {
+    return {
+      id: user.id,
+      role: user.role,
+      name: 'Deleted User',
+      profilePicture: null,
+      location: null,
+      lastLoginAt: null,
+      lastActiveAt: null,
+      isDeleted: true,
+    };
+  }
   const profile = user.creatorProfile || user.freelancerProfile;
   // Privacy Settings > Show Online Status: when off, hide the timestamps the
   // chat UI uses to render "online"/"last seen" for this person.
@@ -184,6 +200,12 @@ async function sendMessage(userId, conversationId, content, imageUrl = null, rep
   if (conv.collaboration && conv.collaboration.status !== 'ACCEPTED') {
     throw ApiError.forbidden('Messaging is unlocked only after the collaboration is accepted');
   }
+
+  const recipientId = conv.participantAId === userId ? conv.participantBId : conv.participantAId;
+  await assertNotBlocked(userId, recipientId);
+  const recipient = await prisma.user.findUnique({ where: { id: recipientId }, select: { status: true } });
+  if (recipient?.status === 'DELETED') throw ApiError.forbidden('This account no longer exists');
+
   const trimmed = String(content || '').trim();
   const hasLocation = locationLat != null && locationLng != null;
   if (!trimmed && !imageUrl && !hasLocation) throw ApiError.badRequest('Message content, image, or location is required');
@@ -292,6 +314,7 @@ async function deleteMessage(userId, conversationId, messageId) {
  * collaboration already exists between the two. */
 async function openConversationWith(userId, otherUserId) {
   if (userId === otherUserId) throw ApiError.badRequest('Cannot converse with yourself');
+  await assertNotBlocked(userId, otherUserId);
 
   const pair = orderedPair(userId, otherUserId);
   const existing = await prisma.conversation.findUnique({
