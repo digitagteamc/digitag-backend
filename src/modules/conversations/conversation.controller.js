@@ -19,13 +19,18 @@ const listMessages = asyncHandler(async (req, res) => {
 });
 
 const sendMessage = asyncHandler(async (req, res) => {
-  const data = await service.sendMessage(req.user.id, req.params.id, req.body.content, req.body.imageUrl, req.body.replyToId);
+  const data = await service.sendMessage(req.user.id, req.params.id, req.body.content, req.body.imageUrl, req.body.replyToId, req.body.locationLat, req.body.locationLng);
   return success(res, { statusCode: STATUS.CREATED, message: 'Message sent', data });
 });
 
 const editMessage = asyncHandler(async (req, res) => {
   const data = await service.editMessage(req.user.id, req.params.id, req.params.msgId, req.body.content);
   return success(res, { message: 'Message updated', data });
+});
+
+const reactToMessage = asyncHandler(async (req, res) => {
+  const data = await service.toggleReaction(req.user.id, req.params.id, req.params.msgId, req.body.emoji);
+  return success(res, { message: 'Reaction updated', data });
 });
 
 const deleteMessage = asyncHandler(async (req, res) => {
@@ -43,4 +48,4 @@ const getCallHistory = asyncHandler(async (req, res) => {
   return success(res, { message: 'Fetched successfully', data });
 });
 
-module.exports = { list, getById, listMessages, sendMessage, editMessage, deleteMessage, openWith, getCallHistory };
+module.exports = { list, getById, listMessages, sendMessage, editMessage, reactToMessage, deleteMessage, openWith, getCallHistory };

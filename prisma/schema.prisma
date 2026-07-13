@@ -428,6 +428,10 @@ model Message {
   isDeleted      Boolean  @default(false)
   isEdited       Boolean  @default(false)
   reactions      Json?
+  // One-time location pin share (WhatsApp-style "Send Current Location"), not
+  // live/continuous tracking — set together, always both null or both present.
+  locationLat    Float?
+  locationLng    Float?
   // WhatsApp-style reply: points at the quoted message. SetNull so deleting the
   // original leaves the reply intact, just without its quote.
   replyToId      String?

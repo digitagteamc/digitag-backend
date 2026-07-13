@@ -50,6 +50,12 @@ router.patch(
   validateRequest({ params: msgParam, body: schemas.editMessageSchema }),
   controller.editMessage,
 );
+router.post(
+  '/:id/messages/:msgId/react',
+  authenticate,
+  validateRequest({ params: msgParam, body: schemas.reactMessageSchema }),
+  controller.reactToMessage,
+);
 router.delete(
   '/:id/messages/:msgId',
   authenticate,

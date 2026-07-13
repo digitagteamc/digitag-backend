@@ -168,7 +168,7 @@ async function listMessages(userId, conversationId, { cursor, limit = 50 } = {})
   };
 }
 
-async function sendMessage(userId, conversationId, content, imageUrl = null, replyToId = null) {
+async function sendMessage(userId, conversationId, content, imageUrl = null, replyToId = null, locationLat = null, locationLng = null) {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: { collaboration: true },
@@ -181,7 +181,8 @@ async function sendMessage(userId, conversationId, content, imageUrl = null, rep
     throw ApiError.forbidden('Messaging is unlocked only after the collaboration is accepted');
   }
   const trimmed = String(content || '').trim();
-  if (!trimmed && !imageUrl) throw ApiError.badRequest('Message content or image is required');
+  const hasLocation = locationLat != null && locationLng != null;
+  if (!trimmed && !imageUrl && !hasLocation) throw ApiError.badRequest('Message content, image, or location is required');
 
   // A reply may only quote a message from this same conversation.
   if (replyToId) {
@@ -192,7 +193,11 @@ async function sendMessage(userId, conversationId, content, imageUrl = null, rep
   const now = new Date();
   const [message] = await prisma.$transaction([
     prisma.message.create({
-      data: { conversationId, senderId: userId, content: trimmed || '', imageUrl: imageUrl || null, replyToId },
+      data: {
+        conversationId, senderId: userId, content: trimmed || '', imageUrl: imageUrl || null, replyToId,
+        locationLat: hasLocation ? locationLat : null,
+        locationLng: hasLocation ? locationLng : null,
+      },
       include: { replyTo: { select: { id: true, content: true, imageUrl: true, senderId: true, isDeleted: true } } },
     }),
     prisma.conversation.update({
@@ -212,7 +217,7 @@ async function sendMessage(userId, conversationId, content, imageUrl = null, rep
     push.notificationMessage(
       t,
       { type: 'NEW_MESSAGE', conversationId, messageId: message.id },
-      { title: senderName, body: trimmed || '📷 Image' },
+      { title: senderName, body: trimmed || (hasLocation ? '📍 Location' : '📷 Image') },
     ),
   );
 
@@ -235,6 +240,34 @@ async function editMessage(userId, conversationId, messageId, content) {
   return prisma.message.update({
     where: { id: messageId },
     data: { content: trimmed, isEdited: true },
+  });
+}
+
+/** Toggle the caller's reaction to a message — either participant may react,
+ * not just the sender, so this checks conversation membership rather than
+ * senderId the way edit/delete do. */
+async function toggleReaction(userId, conversationId, messageId, emoji) {
+  const msg = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!msg) throw ApiError.notFound('Message not found');
+  if (msg.conversationId !== conversationId) throw ApiError.forbidden('Message not in this conversation');
+
+  const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  if (!conv || (conv.participantAId !== userId && conv.participantBId !== userId)) {
+    throw ApiError.forbidden('Not a participant in this conversation');
+  }
+
+  const reactions = { ...(msg.reactions || {}) };
+  const users = new Set(reactions[emoji] || []);
+  if (users.has(userId)) users.delete(userId);
+  else users.add(userId);
+
+  if (users.size > 0) reactions[emoji] = [...users];
+  else delete reactions[emoji];
+
+  return prisma.message.update({
+    where: { id: messageId },
+    data: { reactions },
+    select: { id: true, reactions: true },
   });
 }
 
@@ -307,6 +340,7 @@ module.exports = {
   listMessages,
   sendMessage,
   editMessage,
+  toggleReaction,
   deleteMessage,
   openConversationWith,
   getCallHistory,
