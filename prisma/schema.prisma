@@ -616,6 +616,16 @@ model AdminActivityLog {
 enum ReportType {
   USER
   POST
+  // App bug/feedback report from the Report Issue screen — surfaces in the
+  // same admin Reports queue as user/post reports.
+  ISSUE
+}
+
+// "Notify Me" waitlist from the home hero's Brands/Agencies coming-soon slide.
+model LaunchWaitlist {
+  id           String   @id @default(uuid())
+  mobileNumber String   @unique
+  createdAt    DateTime @default(now())
 }
 
 enum ReportStatus {

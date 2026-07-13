@@ -13,4 +13,9 @@ const status = asyncHandler(async (req, res) => {
   return success(res, { message: 'Fetched successfully', data });
 });
 
-module.exports = { create, status };
+const createIssue = asyncHandler(async (req, res) => {
+  const data = await service.createIssueReport(req.user.id, req.body);
+  return success(res, { statusCode: STATUS.CREATED, message: 'Issue reported', data });
+});
+
+module.exports = { create, status, createIssue };

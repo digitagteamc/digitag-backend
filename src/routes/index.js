@@ -21,6 +21,7 @@ const callRoutes = require('../modules/calls/calls.route');
 const subscriptionRoutes = require('../modules/subscriptions/subscription.route');
 const subscriptionWebhookRoutes = require('../modules/subscriptions/subscription.webhook.route');
 const notificationRoutes = require('../modules/notifications/notification.route');
+const waitlistRoutes = require('../modules/waitlist/waitlist.route');
 
 const router = Router();
 
@@ -49,5 +50,6 @@ router.use('/calls', callRoutes);
 router.use('/subscriptions', subscriptionRoutes);
 router.use('/webhooks', subscriptionWebhookRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/waitlist', waitlistRoutes);
 
 module.exports = router;

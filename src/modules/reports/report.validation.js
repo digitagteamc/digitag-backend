@@ -15,4 +15,13 @@ const statusQuerySchema = Joi.object({
   targetId: uuid.required(),
 });
 
-module.exports = { createReportSchema, statusQuerySchema };
+// App bug/feedback from the Report Issue screen — categories mirror the
+// screen's fixed issue-type cards.
+const createIssueSchema = Joi.object({
+  category: Joi.string().valid('Bug / Error', 'Performance', 'UI / Design', 'Account / Auth').required(),
+  severity: Joi.string().valid('low', 'medium', 'high').required(),
+  description: Joi.string().trim().min(1).max(2000).required(),
+  screenshotUrl: Joi.string().uri().max(2000).optional(),
+});
+
+module.exports = { createReportSchema, statusQuerySchema, createIssueSchema };

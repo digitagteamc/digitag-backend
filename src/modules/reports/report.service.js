@@ -19,4 +19,22 @@ async function getStatus(reportedBy, { type, targetId }) {
   return { reported: !!existing };
 }
 
-module.exports = { createReport, getStatus };
+/** App bug/feedback report — lands in the same admin Reports queue as
+ *  user/post reports. No duplicate check (unlike createReport): a user can
+ *  legitimately report many different issues over time. */
+async function createIssueReport(reportedBy, { category, severity, description, screenshotUrl }) {
+  const reason = `[${severity.toUpperCase()}] ${description}${screenshotUrl ? `\nScreenshot: ${screenshotUrl}` : ''}`;
+  return prisma.report.create({
+    data: {
+      type: 'ISSUE',
+      // There's no external target for an app issue — anchor it to the
+      // reporter so the admin queue's target column still resolves.
+      targetId: reportedBy,
+      targetName: category,
+      reason,
+      reportedBy,
+    },
+  });
+}
+
+module.exports = { createReport, getStatus, createIssueReport };
