@@ -156,11 +156,15 @@ async function listMessages(userId, conversationId, { cursor, limit = 50 } = {})
     include: { replyTo: { select: { id: true, content: true, imageUrl: true, senderId: true, isDeleted: true } } },
   });
 
-  // Mark incoming messages as read on fetch.
-  await prisma.message.updateMany({
+  // Mark incoming messages as read on fetch, and bust this reader's own
+  // conversations-list cache so the unread badge reflects it immediately —
+  // without this the list can keep showing a stale unread count for up to
+  // CONVERSATIONS_TTL seconds after the messages were actually read.
+  const { count } = await prisma.message.updateMany({
     where: { conversationId, senderId: { not: userId }, isRead: false },
     data: { isRead: true },
   });
+  if (count > 0) await cache.del(`conversations:${userId}`);
 
   return {
     items: messages.reverse(),
