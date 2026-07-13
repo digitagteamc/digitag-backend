@@ -287,8 +287,8 @@ async function deleteAccount(userId) {
 
 function sanitizeUser(user) {
     if (!user) return null;
-    const { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, status, createdAt, creatorProfile, freelancerProfile } = user;
-    return { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, status, createdAt, creatorProfile, freelancerProfile };
+    const { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, isPremium, status, createdAt, creatorProfile, freelancerProfile } = user;
+    return { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, isPremium, status, createdAt, creatorProfile, freelancerProfile };
 }
 
 module.exports = { initiateOtp, completeOtp, verifyFirebaseToken, refreshTokens, logout, getMe, switchRole, deleteAccount };

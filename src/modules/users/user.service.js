@@ -23,6 +23,7 @@ async function getUserById(id) {
         id: true,
         role: true,
         createdAt: true,
+        isPremium: true,
         category: { select: { id: true, name: true, slug: true } },
         creatorProfile: true,
         freelancerProfile: true,

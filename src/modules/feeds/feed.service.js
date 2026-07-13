@@ -67,7 +67,11 @@ async function getFeed(user, query = {}) {
   const [items, total] = await Promise.all([
     prisma.post.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      // Premium posts sort above all free posts, newest-first within each tier.
+      // v1: a flat partition, not a decaying boost — simplest thing that gives
+      // Premium real value. Worth revisiting if a stale premium post ever
+      // visibly buries fresh free content in practice.
+      orderBy: [{ user: { isPremium: 'desc' } }, { createdAt: 'desc' }],
       skip,
       take,
       include: buildPostInclude(),

@@ -30,6 +30,7 @@ function buildPostInclude() {
         id: true,
         role: true,
         mobileNumber: true,
+        isPremium: true,
         creatorProfile: {
           select: {
             id: true,
@@ -86,6 +87,7 @@ function shapeOwner(user, postRole, categoryMap = new Map()) {
     return {
       id: user.id, role, name: null, profilePicture: null, location: null, languages: null,
       experience: null, category: null, categories: [], categorySlugs: [], categoryNames: [],
+      isPremium: Boolean(user.isPremium),
     };
   }
 
@@ -114,6 +116,7 @@ function shapeOwner(user, postRole, categoryMap = new Map()) {
     categories: rawCategories,
     categorySlugs: resolvedCategories.map((c) => c.slug),
     categoryNames: resolvedCategories.map((c) => c.name),
+    isPremium: Boolean(user.isPremium),
   };
 }
 
