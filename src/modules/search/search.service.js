@@ -12,7 +12,7 @@ async function searchProfiles(user, q, limit = 20) {
         includeCreator ? prisma.creatorProfile.findMany({
             where: {
                 name: { contains: query, mode: 'insensitive' },
-                user: { status: 'ACTIVE' },
+                user: { status: 'ACTIVE', isDiscoverable: true },
             },
             select: {
                 id: true,
@@ -28,7 +28,7 @@ async function searchProfiles(user, q, limit = 20) {
         includeFreelancer ? prisma.freelancerProfile.findMany({
             where: {
                 name: { contains: query, mode: 'insensitive' },
-                user: { status: 'ACTIVE' },
+                user: { status: 'ACTIVE', isDiscoverable: true },
             },
             select: {
                 id: true,

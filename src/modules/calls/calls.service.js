@@ -67,13 +67,16 @@ async function initiateCall(callerId, calleeId) {
   // full-screen ringing UI. iOS won't deliver data-only pushes in the
   // background, so the message carries an APNs alert override — visible
   // banner + sound — which is what actually makes iPhones ring.
+  // Ringing itself is not discretionary the way a chat/collab push is —
+  // exempt it from the Notifications toggle so turning that off can't make
+  // a user silently unreachable for calls.
   await push.sendToUser(calleeId, (token) =>
     push.callAlertMessage(
       token,
       { type: 'INCOMING_CALL', callId: call.id, channelName, callerName, callerId },
       { title: `📞 ${callerName}`, body: 'Incoming DigiTag call — tap to answer' },
     ),
-  );
+  { respectNotificationSetting: false });
 
   return { callId: call.id, channelName, token, appId: env.AGORA_APP_ID };
 }
@@ -93,7 +96,7 @@ async function acceptCall(callId, calleeId) {
 
   await push.sendToUser(call.callerId, (t) =>
     push.dataMessage(t, { type: 'CALL_ACCEPTED', callId, channelName: call.channelName }),
-  );
+  { respectNotificationSetting: false });
 
   return { channelName: call.channelName, token, appId: env.AGORA_APP_ID };
 }
@@ -108,7 +111,7 @@ async function declineCall(callId, calleeId) {
 
   await push.sendToUser(call.callerId, (t) =>
     push.dataMessage(t, { type: 'CALL_DECLINED', callId }),
-  );
+  { respectNotificationSetting: false });
 }
 
 async function endCall(callId, userId) {
@@ -126,7 +129,7 @@ async function endCall(callId, userId) {
 
   await push.sendToUser(otherUserId, (t) =>
     push.dataMessage(t, { type: 'CALL_ENDED', callId }),
-  );
+  { respectNotificationSetting: false });
 }
 
 async function registerFcmToken(userId, fcmToken, platform) {

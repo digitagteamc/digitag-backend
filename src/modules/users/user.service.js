@@ -111,4 +111,74 @@ async function getUserStats(id) {
   return { followerCount, followingCount, collabCount };
 }
 
-module.exports = { getUserById, getUserIdByTag, getUserStats, recomputeProfileCompletion, getOnboardingStatus };
+const PRIVACY_FIELDS = {
+  isDiscoverable: true,
+  showOnlineStatus: true,
+  shareDataForPersonalization: true,
+  pushNotificationsEnabled: true,
+  preferredLanguage: true,
+};
+
+async function getPrivacySettings(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: PRIVACY_FIELDS });
+  if (!user) throw ApiError.notFound('User not found');
+  return user;
+}
+
+async function updatePrivacySettings(userId, data) {
+  const allowed = {};
+  for (const key of Object.keys(PRIVACY_FIELDS)) {
+    if (data[key] !== undefined) allowed[key] = data[key];
+  }
+  const user = await prisma.user.update({ where: { id: userId }, data: allowed, select: PRIVACY_FIELDS });
+  return user;
+}
+
+// "Download My Data" — everything the user themselves created or that
+// identifies them, in one JSON document. Deliberately excludes the other
+// party's private details in shared records (e.g. a collaborator's phone
+// number) — this is an export of *your* data, not a backdoor into theirs.
+async function exportMyData(userId) {
+  const [user, posts, sentCollabs, receivedCollabs, messages, follows, followers, blocks] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true, mobileNumber: true, countryCode: true, role: true, isVerified: true,
+        isProfileCompleted: true, isPremium: true, createdAt: true,
+        creatorProfile: true, freelancerProfile: true,
+        ...PRIVACY_FIELDS,
+      },
+    }),
+    prisma.post.findMany({ where: { userId }, select: { id: true, description: true, imageUrl: true, location: true, collaborationType: true, budget: true, createdAt: true } }),
+    prisma.collaboration.findMany({ where: { senderId: userId }, select: { id: true, status: true, message: true, createdAt: true, receiverId: true } }),
+    prisma.collaboration.findMany({ where: { receiverId: userId }, select: { id: true, status: true, message: true, createdAt: true, senderId: true } }),
+    prisma.message.findMany({ where: { senderId: userId }, select: { id: true, content: true, createdAt: true, conversationId: true }, orderBy: { createdAt: 'desc' }, take: 1000 }),
+    prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true, createdAt: true } }),
+    prisma.follow.findMany({ where: { followingId: userId }, select: { followerId: true, createdAt: true } }),
+    prisma.block.findMany({ where: { blockerId: userId }, select: { blockedId: true, createdAt: true } }),
+  ]);
+  if (!user) throw ApiError.notFound('User not found');
+
+  return {
+    exportedAt: new Date().toISOString(),
+    account: user,
+    posts,
+    collaborationsSent: sentCollabs,
+    collaborationsReceived: receivedCollabs,
+    messagesSent: messages,
+    following: follows,
+    followers,
+    blockedUsers: blocks,
+  };
+}
+
+module.exports = {
+  getUserById,
+  getUserIdByTag,
+  getUserStats,
+  recomputeProfileCompletion,
+  getOnboardingStatus,
+  getPrivacySettings,
+  updatePrivacySettings,
+  exportMyData,
+};

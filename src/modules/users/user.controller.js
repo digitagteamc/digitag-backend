@@ -28,4 +28,21 @@ const getMyStats = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
-module.exports = { onboardingStatus, getByTag, getById, getStats, getMyStats };
+const getPrivacySettings = asyncHandler(async (req, res) => {
+  const data = await service.getPrivacySettings(req.user.id);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
+const updatePrivacySettings = asyncHandler(async (req, res) => {
+  const data = await service.updatePrivacySettings(req.user.id, req.body);
+  return success(res, { message: 'Settings updated', data });
+});
+
+const exportMyData = asyncHandler(async (req, res) => {
+  const data = await service.exportMyData(req.user.id);
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', 'attachment; filename="digitag-my-data.json"');
+  res.send(JSON.stringify(data, null, 2));
+});
+
+module.exports = { onboardingStatus, getByTag, getById, getStats, getMyStats, getPrivacySettings, updatePrivacySettings, exportMyData };

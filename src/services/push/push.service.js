@@ -31,8 +31,17 @@ async function pruneDeadToken(token) {
 
 /** Send one FCM message to every device a user is logged in on.
  *  `buildMessage(token)` returns the full messaging payload for that token.
- *  Dead tokens are pruned so logged-out/uninstalled devices stop receiving. */
-async function sendToUser(userId, buildMessage) {
+ *  Dead tokens are pruned so logged-out/uninstalled devices stop receiving.
+ *  `respectNotificationSetting` (default true) checks Privacy Settings'
+ *  pushNotificationsEnabled first — pass false for call-critical pushes
+ *  (ringing, call lifecycle events), which aren't discretionary the way a
+ *  chat/collab notification is. */
+async function sendToUser(userId, buildMessage, { respectNotificationSetting = true } = {}) {
+  if (respectNotificationSetting) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { pushNotificationsEnabled: true } });
+    if (user && user.pushNotificationsEnabled === false) return;
+  }
+
   const tokens = await getTokensForUser(userId);
   if (tokens.length === 0) return;
 

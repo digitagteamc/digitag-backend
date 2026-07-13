@@ -13,6 +13,7 @@ const userInclude = {
     fcmToken: true,
     lastLoginAt: true,
     lastActiveAt: true,
+    showOnlineStatus: true,
     creatorProfile: { select: { name: true, profilePicture: true, location: true } },
     freelancerProfile: { select: { name: true, profilePicture: true, location: true } },
   },
@@ -27,14 +28,17 @@ function orderedPair(userIdA, userIdB) {
 function shapeParticipant(user) {
   if (!user) return null;
   const profile = user.creatorProfile || user.freelancerProfile;
+  // Privacy Settings > Show Online Status: when off, hide the timestamps the
+  // chat UI uses to render "online"/"last seen" for this person.
+  const hideActivity = user.showOnlineStatus === false;
   return {
     id: user.id,
     role: user.role,
     name: profile ? profile.name : null,
     profilePicture: profile ? profile.profilePicture : null,
     location: profile ? profile.location : null,
-    lastLoginAt: user.lastLoginAt || null,
-    lastActiveAt: user.lastActiveAt || null,
+    lastLoginAt: hideActivity ? null : (user.lastLoginAt || null),
+    lastActiveAt: hideActivity ? null : (user.lastActiveAt || null),
   };
 }
 

@@ -129,6 +129,13 @@ model User {
   // actively using the app within the same session.
   lastActiveAt       DateTime?
   fcmToken           String?
+  // Privacy Settings screen — all default to the app's existing behavior
+  // (visible/on) so nothing changes for users until they actively opt out.
+  isDiscoverable               Boolean  @default(true) // hide from Search when off
+  showOnlineStatus             Boolean  @default(true) // hide lastActiveAt from chat partners when off
+  shareDataForPersonalization  Boolean  @default(true) // stored preference; not yet read by any analytics/personalization system
+  pushNotificationsEnabled     Boolean  @default(true) // gates non-call pushes; incoming calls always ring
+  preferredLanguage            String   @default("English") // stored preference; UI copy itself is English-only today
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 

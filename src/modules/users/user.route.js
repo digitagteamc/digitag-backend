@@ -9,9 +9,19 @@ const { idParam } = require('../../validations/common.validation');
 const router = Router();
 
 const tagParam = Joi.object({ tagId: Joi.string().trim().min(1).max(50).required() });
+const privacySettingsBody = Joi.object({
+  isDiscoverable: Joi.boolean().optional(),
+  showOnlineStatus: Joi.boolean().optional(),
+  shareDataForPersonalization: Joi.boolean().optional(),
+  pushNotificationsEnabled: Joi.boolean().optional(),
+  preferredLanguage: Joi.string().trim().min(1).max(30).optional(),
+}).min(1);
 
 router.get('/onboarding-status', authenticate, controller.onboardingStatus);
 router.get('/me/stats', authenticate, controller.getMyStats);
+router.get('/me/privacy-settings', authenticate, controller.getPrivacySettings);
+router.patch('/me/privacy-settings', authenticate, validateRequest({ body: privacySettingsBody }), controller.updatePrivacySettings);
+router.get('/me/export', authenticate, controller.exportMyData);
 // Profile browsing is public (Apple 5.1.1 — viewing a creator/freelancer profile isn't
 // account-based). Must be registered before /:id, otherwise "by-tag" is swallowed as an :id.
 router.get('/by-tag/:tagId', optionalAuth, validateRequest({ params: tagParam }), controller.getByTag);
