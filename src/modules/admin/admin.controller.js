@@ -119,6 +119,23 @@ const getBlocks = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
 });
 
+// ─── Subscriptions ────────────────────────────────────────────────────────────
+
+const getSubscriptions = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listSubscriptions(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const grantPremium = asyncHandler(async (req, res) => {
+  const data = await service.grantPremium(req.admin.id, req.admin.name, req.params.id);
+  return success(res, { message: 'Premium granted', data });
+});
+
+const revokePremium = asyncHandler(async (req, res) => {
+  const data = await service.revokePremium(req.admin.id, req.admin.name, req.params.id);
+  return success(res, { message: 'Premium revoked', data });
+});
+
 // ─── Categories ───────────────────────────────────────────────────────────────
 
 const getCategories = asyncHandler(async (req, res) => {
@@ -163,6 +180,9 @@ module.exports = {
   getReports,
   updateReport,
   getBlocks,
+  getSubscriptions,
+  grantPremium,
+  revokePremium,
   getCategories,
   createCategory,
   updateCategory,

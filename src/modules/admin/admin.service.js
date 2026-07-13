@@ -669,6 +669,89 @@ async function listBlocks(query = {}) {
   return { items: items.map(shapeBlock), meta: buildPaginationMeta({ total, page, limit }) };
 }
 
+// ─── Subscriptions ────────────────────────────────────────────────────────────
+
+function shapeSubscription(sub) {
+  const profile = sub.user?.creatorProfile || sub.user?.freelancerProfile;
+  return {
+    id: sub.id,
+    userId: sub.userId,
+    name: profile?.name || null,
+    mobileNumber: sub.user?.mobileNumber || null,
+    role: sub.user?.role || null,
+    isPremium: Boolean(sub.user?.isPremium),
+    status: sub.status,
+    razorpaySubscriptionId: sub.razorpaySubscriptionId,
+    currentStart: sub.currentStart ? sub.currentStart.toISOString() : null,
+    currentEnd: sub.currentEnd ? sub.currentEnd.toISOString() : null,
+    createdAt: sub.createdAt.toISOString(),
+  };
+}
+
+async function listSubscriptions(query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const { search, status } = query;
+
+  const STATUS_MAP = {
+    created: 'CREATED', authenticated: 'AUTHENTICATED', active: 'ACTIVE', pending: 'PENDING',
+    halted: 'HALTED', cancelled: 'CANCELLED', completed: 'COMPLETED', expired: 'EXPIRED',
+  };
+  const where = {
+    ...(status && STATUS_MAP[status] ? { status: STATUS_MAP[status] } : {}),
+    ...(search
+      ? {
+          user: {
+            OR: [
+              { mobileNumber: { contains: search, mode: 'insensitive' } },
+              { creatorProfile: { name: { contains: search, mode: 'insensitive' } } },
+              { freelancerProfile: { name: { contains: search, mode: 'insensitive' } } },
+            ],
+          },
+        }
+      : {}),
+  };
+
+  const userSelect = {
+    mobileNumber: true,
+    role: true,
+    isPremium: true,
+    creatorProfile: { select: { name: true } },
+    freelancerProfile: { select: { name: true } },
+  };
+
+  const [items, total] = await Promise.all([
+    prisma.subscription.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: { user: { select: userSelect } },
+    }),
+    prisma.subscription.count({ where }),
+  ]);
+
+  return { items: items.map(shapeSubscription), meta: buildPaginationMeta({ total, page, limit }) };
+}
+
+// Support-case override — does not touch Razorpay. For when a payment
+// succeeded on Razorpay's side but the webhook never synced (or the reverse:
+// pulling access for a chargeback/dispute) without waiting on billing state.
+async function grantPremium(adminId, adminName, userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.status === 'DELETED') throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
+  await prisma.user.update({ where: { id: userId }, data: { isPremium: true } });
+  await logAdminAction(adminId, adminName, 'Granted premium (manual override)', user.mobileNumber);
+  return { ok: true };
+}
+
+async function revokePremium(adminId, adminName, userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.status === 'DELETED') throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
+  await prisma.user.update({ where: { id: userId }, data: { isPremium: false } });
+  await logAdminAction(adminId, adminName, 'Revoked premium (manual override)', user.mobileNumber);
+  return { ok: true };
+}
+
 // ─── Categories ───────────────────────────────────────────────────────────────
 
 async function listCategoriesAdmin(query = {}) {
@@ -748,6 +831,9 @@ module.exports = {
   listReports,
   reviewReport,
   listBlocks,
+  listSubscriptions,
+  grantPremium,
+  revokePremium,
   listCategoriesAdmin,
   createCategory,
   updateCategory,

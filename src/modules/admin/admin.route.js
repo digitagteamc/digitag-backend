@@ -76,6 +76,14 @@ router.patch('/reports/:id', validateRequest({ params: v.idParam, body: v.review
 // GET /admin/blocks?page=&limit=
 router.get('/blocks', validateRequest({ query: v.blockListQuery }), controller.getBlocks);
 
+// Subscriptions
+// GET /admin/subscriptions?page=&limit=&search=&status=
+router.get('/subscriptions', validateRequest({ query: v.subscriptionListQuery }), controller.getSubscriptions);
+// POST /admin/subscriptions/:id/grant — manual override, does not touch Razorpay
+router.post('/subscriptions/:id/grant', validateRequest({ params: v.idParam }), controller.grantPremium);
+// POST /admin/subscriptions/:id/revoke
+router.post('/subscriptions/:id/revoke', validateRequest({ params: v.idParam }), controller.revokePremium);
+
 // Categories
 // GET /admin/categories?page=&limit=&search=
 router.get('/categories', validateRequest({ query: v.categoryListQuery }), controller.getCategories);
