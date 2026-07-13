@@ -19,6 +19,7 @@ const postListQuery = Joi.object({
   search: Joi.string().trim().max(200).optional().allow(''),
   role: Joi.string().valid('CREATOR', 'FREELANCER').optional(),
   status: Joi.string().valid('active', 'hidden', 'deleted', 'reported').optional(),
+  sort: Joi.string().valid('newest', 'expiry').optional(),
 });
 
 const collabListQuery = Joi.object({

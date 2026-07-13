@@ -137,6 +137,7 @@ function shapePost(post, reportCount = 0) {
     authorRole: post.role.toLowerCase(),
     status,
     createdAt: post.createdAt.toISOString(),
+    expiresAt: post.expiresAt ? post.expiresAt.toISOString() : null,
     reportCount,
   };
 }
@@ -267,7 +268,7 @@ async function loginAdmin({ email, password }) {
   await logAdminAction(admin.id, admin.name, 'Login');
 
   const token = signAdminToken(admin);
-  return { token, admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role } };
+  return { token, admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role, twoFactorEnabled: admin.twoFactorEnabled } };
 }
 
 async function verifyTwoFactorLogin(tempToken, code) {
@@ -289,7 +290,7 @@ async function verifyTwoFactorLogin(tempToken, code) {
   await logAdminAction(admin.id, admin.name, 'Login (2FA)');
 
   const token = signAdminToken(admin);
-  return { token, admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role } };
+  return { token, admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role, twoFactorEnabled: admin.twoFactorEnabled } };
 }
 
 // ─── Two-factor setup (already-logged-in admin securing their own account) ────
@@ -665,7 +666,7 @@ async function listFreelancers(query = {}) {
 
 async function listPosts(query = {}) {
   const { page, limit, skip, take } = parsePagination(query);
-  const { search, role, status } = query;
+  const { search, role, status, sort } = query;
 
   const where = {};
   if (role) where.role = role;
@@ -683,12 +684,20 @@ async function listPosts(query = {}) {
     },
   };
 
+  // 'expiry': most time remaining first (Lifetime posts have no expiresAt,
+  // i.e. infinite time left, so they sort first — Postgres's default NULLS
+  // FIRST for DESC already puts them there). Since expiresAt is an absolute
+  // timestamp, ordering by it DESC is equivalent to ordering by (expiresAt -
+  // now) DESC — "now" is the same constant for every row, so it doesn't
+  // change the relative order.
+  const orderBy = sort === 'expiry' ? { expiresAt: 'desc' } : { createdAt: 'desc' };
+
   const [rawPosts, total] = await Promise.all([
     prisma.post.findMany({
       where,
       skip,
       take,
-      orderBy: { createdAt: 'desc' },
+      orderBy,
       include: postInclude,
     }),
     prisma.post.count({ where }),
