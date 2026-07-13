@@ -20,6 +20,7 @@ const socialVerificationRoutes = require('../modules/social-verifications/social
 const callRoutes = require('../modules/calls/calls.route');
 const subscriptionRoutes = require('../modules/subscriptions/subscription.route');
 const subscriptionWebhookRoutes = require('../modules/subscriptions/subscription.webhook.route');
+const notificationRoutes = require('../modules/notifications/notification.route');
 
 const router = Router();
 
@@ -47,5 +48,6 @@ router.use('/social-verifications', socialVerificationRoutes);
 router.use('/calls', callRoutes);
 router.use('/subscriptions', subscriptionRoutes);
 router.use('/webhooks', subscriptionWebhookRoutes);
+router.use('/notifications', notificationRoutes);
 
 module.exports = router;

@@ -35,8 +35,27 @@ async function pruneDeadToken(token) {
  *  `respectNotificationSetting` (default true) checks Privacy Settings'
  *  pushNotificationsEnabled first — pass false for call-critical pushes
  *  (ringing, call lifecycle events), which aren't discretionary the way a
- *  chat/collab notification is. */
+ *  chat/collab notification is.
+ *
+ *  Any message built with a `notification` field (i.e. via notificationMessage,
+ *  not the data-only call-signaling builders) is also persisted as a
+ *  Notification row, regardless of push-eligibility — the in-app Notifications
+ *  tab is the durable source of truth; the push itself is just the interrupt
+ *  on top of it. */
 async function sendToUser(userId, buildMessage, { respectNotificationSetting = true } = {}) {
+  const sample = buildMessage('_persist_probe_');
+  if (sample.notification) {
+    await prisma.notification.create({
+      data: {
+        userId,
+        type: sample.data?.type || 'GENERIC',
+        title: sample.notification.title,
+        body: sample.notification.body,
+        data: sample.data || {},
+      },
+    }).catch((err) => logger.error('[Notification] persist failed', { err: err.message }));
+  }
+
   if (respectNotificationSetting) {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { pushNotificationsEnabled: true } });
     if (user && user.pushNotificationsEnabled === false) return;

@@ -167,6 +167,7 @@ model User {
   reports                Report[]                @relation("ReportReporter")
   savedPosts             SavedPost[]
   fcmDevices             FcmDevice[]
+  notifications          Notification[]
 
   @@index([role])
   @@index([mobileNumber])
@@ -446,6 +447,28 @@ model Message {
   @@index([senderId])
   // Covers unread-count groupBy: senderId filter + isRead filter per conversation
   @@index([conversationId, senderId, isRead])
+}
+
+// -------------------------
+// Notifications — durable record of every push sent to a user (new message,
+// collab request/accepted/declined, new post), independent of whether the
+// push itself was ever delivered. Call signaling (ringing, call lifecycle)
+// is intentionally NOT persisted here — it's transient by nature.
+// -------------------------
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, isRead])
 }
 
 // -------------------------
