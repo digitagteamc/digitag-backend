@@ -29,6 +29,12 @@ async function pruneDeadToken(token) {
   ]);
 }
 
+// Types with their own dedicated history/unread tracking elsewhere in the
+// app — persisting them as generic Notification rows too would just be a
+// duplicate, noisier copy of what the Messages tab (and calls, which are
+// data-only and never reach this check anyway) already show.
+const SKIP_NOTIFICATION_PERSIST = new Set(['NEW_MESSAGE']);
+
 /** Send one FCM message to every device a user is logged in on.
  *  `buildMessage(token)` returns the full messaging payload for that token.
  *  Dead tokens are pruned so logged-out/uninstalled devices stop receiving.
@@ -38,13 +44,14 @@ async function pruneDeadToken(token) {
  *  chat/collab notification is.
  *
  *  Any message built with a `notification` field (i.e. via notificationMessage,
- *  not the data-only call-signaling builders) is also persisted as a
- *  Notification row, regardless of push-eligibility — the in-app Notifications
- *  tab is the durable source of truth; the push itself is just the interrupt
- *  on top of it. */
+ *  not the data-only call-signaling builders), and not in
+ *  SKIP_NOTIFICATION_PERSIST, is also persisted as a Notification row,
+ *  regardless of push-eligibility — the in-app Notifications tab is the
+ *  durable source of truth; the push itself is just the interrupt on top
+ *  of it. */
 async function sendToUser(userId, buildMessage, { respectNotificationSetting = true } = {}) {
   const sample = buildMessage('_persist_probe_');
-  if (sample.notification) {
+  if (sample.notification && !SKIP_NOTIFICATION_PERSIST.has(sample.data?.type)) {
     await prisma.notification.create({
       data: {
         userId,

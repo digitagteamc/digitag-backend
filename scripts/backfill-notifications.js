@@ -1,8 +1,11 @@
 /**
  * One-time script: reconstruct Notification rows for activity that happened
  * before the Notification table existed (collab requests/accepts/declines,
- * messages, new-post pushes to accepted collaborators) so the app's
- * Notifications tab isn't empty for existing users.
+ * new-post pushes to accepted collaborators) so the app's Notifications tab
+ * isn't empty for existing users. Messages are NOT backfilled here — chat
+ * has its own dedicated history/unread tracking, and duplicating it into
+ * the generic Notifications tab was decided against (see push.service.js's
+ * SKIP_NOTIFICATION_PERSIST).
  *
  * Only backfills events strictly before the earliest real (post-launch)
  * Notification row, so nothing here can duplicate a row push.service.js
@@ -71,34 +74,6 @@ async function backfillCollabs(cutoff) {
   return rows.length;
 }
 
-async function backfillMessages(cutoff) {
-  const messages = await prisma.message.findMany({
-    where: { isDeleted: false, createdAt: { lt: cutoff } },
-    include: {
-      sender: profileInclude,
-      conversation: { select: { participantAId: true, participantBId: true } },
-    },
-  });
-
-  const rows = messages.map((m) => {
-    const recipientId = m.conversation.participantAId === m.senderId
-      ? m.conversation.participantBId
-      : m.conversation.participantAId;
-    return {
-      userId: recipientId,
-      type: 'NEW_MESSAGE',
-      title: displayName(m.sender),
-      body: m.content || (m.imageUrl ? '📷 Photo' : (m.locationLat != null ? '📍 Location' : '')),
-      data: { type: 'NEW_MESSAGE', conversationId: m.conversationId, messageId: m.id },
-      isRead: true,
-      createdAt: m.createdAt,
-    };
-  });
-
-  if (rows.length) await prisma.notification.createMany({ data: rows });
-  return rows.length;
-}
-
 async function backfillPosts(cutoff) {
   const posts = await prisma.post.findMany({
     where: { createdAt: { lt: cutoff } },
@@ -141,9 +116,8 @@ async function backfillPosts(cutoff) {
   console.log(`Backfilling notifications created before ${cutoff.toISOString()}...`);
 
   const collabCount = await backfillCollabs(cutoff);
-  const msgCount = await backfillMessages(cutoff);
   const postCount = await backfillPosts(cutoff);
 
-  console.log({ collabCount, msgCount, postCount, total: collabCount + msgCount + postCount });
+  console.log({ collabCount, postCount, total: collabCount + postCount });
   await prisma.$disconnect();
 })();
