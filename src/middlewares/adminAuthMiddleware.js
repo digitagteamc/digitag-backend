@@ -24,7 +24,7 @@ async function authenticateAdmin(req, _res, next) {
 
     const admin = await prisma.adminUser.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, isActive: true },
+      select: { id: true, name: true, email: true, isActive: true, role: true },
     });
 
     if (!admin) throw ApiError.unauthorized('Admin account not found');
@@ -37,4 +37,11 @@ async function authenticateAdmin(req, _res, next) {
   }
 }
 
-module.exports = { authenticateAdmin };
+// Gates routes to SUPER_ADMIN only — user deletion, premium grants, admin
+// team management, revenue. Must run after authenticateAdmin (needs req.admin).
+function requireSuperAdmin(req, _res, next) {
+  if (req.admin?.role !== 'SUPER_ADMIN') return next(ApiError.forbidden('Super admin access required'));
+  return next();
+}
+
+module.exports = { authenticateAdmin, requireSuperAdmin };

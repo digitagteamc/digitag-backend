@@ -1,0 +1,6 @@
+CREATE TYPE "AdminRole" AS ENUM ('SUPER_ADMIN', 'MODERATOR');
+
+ALTER TABLE "AdminUser"
+  ADD COLUMN "role" "AdminRole" NOT NULL DEFAULT 'SUPER_ADMIN',
+  ADD COLUMN "twoFactorSecret" TEXT,
+  ADD COLUMN "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false;

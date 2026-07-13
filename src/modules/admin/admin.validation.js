@@ -82,6 +82,42 @@ const idParam = Joi.object({
   id: Joi.string().uuid().required(),
 });
 
+const verifyTwoFactorLogin = Joi.object({
+  tempToken: Joi.string().required(),
+  code: Joi.string().length(6).pattern(/^\d+$/).required(),
+});
+
+const twoFactorCode = Joi.object({
+  code: Joi.string().length(6).pattern(/^\d+$/).required(),
+});
+
+const createAdmin = Joi.object({
+  name: Joi.string().trim().min(1).max(100).required(),
+  email: Joi.string().email().required(),
+  password: Joi.string().min(8).max(100).required(),
+  role: Joi.string().valid('SUPER_ADMIN', 'MODERATOR').required(),
+});
+
+const updateAdmin = Joi.object({
+  role: Joi.string().valid('SUPER_ADMIN', 'MODERATOR').optional(),
+  isActive: Joi.boolean().optional(),
+}).min(1);
+
+const bulkPostAction = Joi.object({
+  postIds: Joi.array().items(Joi.string().uuid()).min(1).max(200).required(),
+  action: Joi.string().valid('approve', 'hide', 'restore', 'delete').required(),
+});
+
+const bulkUserIds = Joi.object({
+  userIds: Joi.array().items(Joi.string().uuid()).min(1).max(200).required(),
+});
+
+const broadcast = Joi.object({
+  title: Joi.string().trim().min(1).max(100).required(),
+  body: Joi.string().trim().min(1).max(500).required(),
+  target: Joi.string().valid('all', 'creators', 'freelancers', 'premium').required(),
+});
+
 module.exports = {
   login,
   listQuery,
@@ -96,4 +132,11 @@ module.exports = {
   categoryListQuery,
   createCategory,
   updateCategory,
+  verifyTwoFactorLogin,
+  twoFactorCode,
+  createAdmin,
+  updateAdmin,
+  bulkPostAction,
+  bulkUserIds,
+  broadcast,
 };

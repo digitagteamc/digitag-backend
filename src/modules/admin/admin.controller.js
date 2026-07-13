@@ -8,13 +8,55 @@ const service = require('./admin.service');
 
 const login = asyncHandler(async (req, res) => {
   const data = await service.loginAdmin(req.body);
+  return success(res, { message: data.requiresTwoFactor ? 'Two-factor code required' : MESSAGES.ADMIN.LOGIN_SUCCESS, data });
+});
+
+const verifyTwoFactorLogin = asyncHandler(async (req, res) => {
+  const data = await service.verifyTwoFactorLogin(req.body.tempToken, req.body.code);
   return success(res, { message: MESSAGES.ADMIN.LOGIN_SUCCESS, data });
+});
+
+const setupTwoFactor = asyncHandler(async (req, res) => {
+  const data = await service.setupTwoFactor(req.admin.id);
+  return success(res, { message: 'Scan the QR code, then confirm with a code to enable', data });
+});
+
+const enableTwoFactor = asyncHandler(async (req, res) => {
+  const data = await service.enableTwoFactor(req.admin.id, req.body.code);
+  return success(res, { message: 'Two-factor authentication enabled', data });
+});
+
+const disableTwoFactor = asyncHandler(async (req, res) => {
+  const data = await service.disableTwoFactor(req.admin.id);
+  return success(res, { message: 'Two-factor authentication disabled', data });
+});
+
+// ─── Team (Super Admin only) ────────────────────────────────────────────────────
+
+const getAdmins = asyncHandler(async (req, res) => {
+  const data = await service.listAdmins();
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
+const createAdmin = asyncHandler(async (req, res) => {
+  const data = await service.createAdmin(req.admin.id, req.admin.name, req.body);
+  return success(res, { statusCode: STATUS.CREATED, message: MESSAGES.GENERIC.CREATED, data });
+});
+
+const updateAdmin = asyncHandler(async (req, res) => {
+  const data = await service.updateAdmin(req.admin.id, req.admin.name, req.params.id, req.body);
+  return success(res, { message: MESSAGES.GENERIC.UPDATED, data });
 });
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 const getStats = asyncHandler(async (req, res) => {
   const data = await service.getDashboardStats(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
+const getRevenueStats = asyncHandler(async (req, res) => {
+  const data = await service.getRevenueStats();
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
@@ -43,6 +85,18 @@ const unsuspendUser = asyncHandler(async (req, res) => {
 const deleteUser = asyncHandler(async (req, res) => {
   const data = await service.deleteUser(req.admin.id, req.admin.name, req.params.id);
   return success(res, { message: MESSAGES.ADMIN.USER_DELETED, data });
+});
+
+const bulkSuspendUsers = asyncHandler(async (req, res) => {
+  const data = await service.bulkSuspendUsers(req.admin.id, req.admin.name, req.body.userIds);
+  return success(res, { message: 'Users suspended', data });
+});
+
+const exportUsersCsv = asyncHandler(async (req, res) => {
+  const csv = await service.exportUsersCsv();
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="digitag-users.csv"');
+  res.send(csv);
 });
 
 // ─── Creators ─────────────────────────────────────────────────────────────────
@@ -86,6 +140,11 @@ const deletePost = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.ADMIN.POST_DELETED, data });
 });
 
+const bulkModeratePosts = asyncHandler(async (req, res) => {
+  const data = await service.bulkModeratePosts(req.admin.id, req.admin.name, req.body.postIds, req.body.action);
+  return success(res, { message: 'Posts updated', data });
+});
+
 // ─── Collaborations ───────────────────────────────────────────────────────────
 
 const getCollaborations = asyncHandler(async (req, res) => {
@@ -110,6 +169,11 @@ const getReports = asyncHandler(async (req, res) => {
 const updateReport = asyncHandler(async (req, res) => {
   const data = await service.reviewReport(req.admin.id, req.admin.name, req.params.id, req.body.status);
   return success(res, { message: MESSAGES.ADMIN.REPORT_UPDATED, data });
+});
+
+const getReportSla = asyncHandler(async (req, res) => {
+  const data = await service.getReportSlaStats();
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
 // ─── Blocks ───────────────────────────────────────────────────────────────────
@@ -153,6 +217,13 @@ const updateCategory = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.UPDATED, data });
 });
 
+// ─── Broadcast ────────────────────────────────────────────────────────────────
+
+const broadcast = asyncHandler(async (req, res) => {
+  const data = await service.broadcastNotification(req.admin.id, req.admin.name, req.body);
+  return success(res, { message: 'Broadcast sent', data });
+});
+
 // ─── Activity Logs ────────────────────────────────────────────────────────────
 
 const getActivityLogs = asyncHandler(async (req, res) => {
@@ -162,12 +233,22 @@ const getActivityLogs = asyncHandler(async (req, res) => {
 
 module.exports = {
   login,
+  verifyTwoFactorLogin,
+  setupTwoFactor,
+  enableTwoFactor,
+  disableTwoFactor,
+  getAdmins,
+  createAdmin,
+  updateAdmin,
   getStats,
+  getRevenueStats,
   getUsers,
   getUser,
   suspendUser,
   unsuspendUser,
   deleteUser,
+  bulkSuspendUsers,
+  exportUsersCsv,
   getCreators,
   getFreelancers,
   getPosts,
@@ -175,10 +256,12 @@ module.exports = {
   restorePost,
   approvePost,
   deletePost,
+  bulkModeratePosts,
   getCollaborations,
   getChats,
   getReports,
   updateReport,
+  getReportSla,
   getBlocks,
   getSubscriptions,
   grantPremium,
@@ -186,5 +269,6 @@ module.exports = {
   getCategories,
   createCategory,
   updateCategory,
+  broadcast,
   getActivityLogs,
 };

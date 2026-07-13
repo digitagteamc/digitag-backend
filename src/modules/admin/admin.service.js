@@ -1,5 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const speakeasy = require('speakeasy');
+const qrcode = require('qrcode');
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const MESSAGES = require('../../constants/messages');
@@ -7,6 +9,7 @@ const env = require('../../config/env');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
 const cache = require('../../services/cache/cache.service');
 const categoryService = require('../categories/category.service');
+const logger = require('../../utils/logger');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -15,6 +18,17 @@ function signAdminToken(admin) {
     { sub: admin.id, role: 'ADMIN', type: 'access' },
     env.JWT_ACCESS_SECRET,
     { expiresIn: '8h' },
+  );
+}
+
+// Short-lived, deliberately NOT role: 'ADMIN' — authenticateAdmin rejects it,
+// so it can only ever be exchanged via verifyTwoFactorLogin, never used to
+// call a real admin route.
+function signTwoFactorPendingToken(admin) {
+  return jwt.sign(
+    { sub: admin.id, role: 'ADMIN_2FA_PENDING', type: 'access' },
+    env.JWT_ACCESS_SECRET,
+    { expiresIn: '5m' },
   );
 }
 
@@ -243,11 +257,116 @@ async function loginAdmin({ email, password }) {
   const valid = await bcrypt.compare(password, admin.passwordHash);
   if (!valid) throw ApiError.unauthorized(MESSAGES.ADMIN.INVALID_CREDENTIALS);
 
+  if (admin.twoFactorEnabled) {
+    // Password alone isn't enough — hand back a short-lived pending token the
+    // client must exchange (with a TOTP code) at /admin/2fa/verify-login.
+    return { requiresTwoFactor: true, tempToken: signTwoFactorPendingToken(admin) };
+  }
+
   await prisma.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
   await logAdminAction(admin.id, admin.name, 'Login');
 
   const token = signAdminToken(admin);
-  return { token, admin: { id: admin.id, name: admin.name, email: admin.email } };
+  return { token, admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role } };
+}
+
+async function verifyTwoFactorLogin(tempToken, code) {
+  let payload;
+  try {
+    payload = jwt.verify(tempToken, env.JWT_ACCESS_SECRET);
+  } catch {
+    throw ApiError.unauthorized('Two-factor session expired — please log in again');
+  }
+  if (payload.role !== 'ADMIN_2FA_PENDING') throw ApiError.unauthorized('Invalid session');
+
+  const admin = await prisma.adminUser.findUnique({ where: { id: payload.sub } });
+  if (!admin || !admin.isActive) throw ApiError.unauthorized(MESSAGES.ADMIN.INVALID_CREDENTIALS);
+
+  const ok = speakeasy.totp.verify({ secret: admin.twoFactorSecret, encoding: 'base32', token: code, window: 1 });
+  if (!ok) throw ApiError.unauthorized('Invalid authentication code');
+
+  await prisma.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
+  await logAdminAction(admin.id, admin.name, 'Login (2FA)');
+
+  const token = signAdminToken(admin);
+  return { token, admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role } };
+}
+
+// ─── Two-factor setup (already-logged-in admin securing their own account) ────
+
+async function setupTwoFactor(adminId) {
+  const admin = await prisma.adminUser.findUnique({ where: { id: adminId } });
+  if (!admin) throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
+
+  const secret = speakeasy.generateSecret({ name: `DigiTag Admin (${admin.email})` });
+  // Stored immediately but twoFactorEnabled stays false until confirmed via
+  // enableTwoFactor — otherwise a generated-but-never-scanned secret would
+  // silently lock the admin out of nothing (still password-only) which is
+  // fine, but we don't want a half-set-up secret treated as "on".
+  await prisma.adminUser.update({ where: { id: adminId }, data: { twoFactorSecret: secret.base32 } });
+
+  const qrDataUrl = await qrcode.toDataURL(secret.otpauth_url);
+  return { secret: secret.base32, qrDataUrl };
+}
+
+async function enableTwoFactor(adminId, code) {
+  const admin = await prisma.adminUser.findUnique({ where: { id: adminId } });
+  if (!admin) throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
+  if (!admin.twoFactorSecret) throw ApiError.badRequest('Call setup first to generate a secret');
+
+  const ok = speakeasy.totp.verify({ secret: admin.twoFactorSecret, encoding: 'base32', token: code, window: 1 });
+  if (!ok) throw ApiError.badRequest('Invalid authentication code');
+
+  await prisma.adminUser.update({ where: { id: adminId }, data: { twoFactorEnabled: true } });
+  await logAdminAction(adminId, admin.name, 'Enabled two-factor authentication');
+  return { ok: true };
+}
+
+async function disableTwoFactor(adminId) {
+  const admin = await prisma.adminUser.findUnique({ where: { id: adminId } });
+  if (!admin) throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
+  await prisma.adminUser.update({ where: { id: adminId }, data: { twoFactorEnabled: false, twoFactorSecret: null } });
+  await logAdminAction(adminId, admin.name, 'Disabled two-factor authentication');
+  return { ok: true };
+}
+
+// ─── Team management (Super Admin only) ────────────────────────────────────────
+
+function shapeAdmin(a) {
+  return {
+    id: a.id, name: a.name, email: a.email, role: a.role, isActive: a.isActive,
+    twoFactorEnabled: a.twoFactorEnabled, lastLoginAt: a.lastLoginAt ? a.lastLoginAt.toISOString() : null,
+    createdAt: a.createdAt.toISOString(),
+  };
+}
+
+async function listAdmins() {
+  const admins = await prisma.adminUser.findMany({ orderBy: { createdAt: 'asc' } });
+  return admins.map(shapeAdmin);
+}
+
+async function createAdmin(actorId, actorName, { name, email, password, role }) {
+  const existing = await prisma.adminUser.findUnique({ where: { email } });
+  if (existing) throw ApiError.conflict('An admin with this email already exists');
+  const passwordHash = await bcrypt.hash(password, 10);
+  const admin = await prisma.adminUser.create({ data: { name, email, passwordHash, role } });
+  await logAdminAction(actorId, actorName, `Created admin (${role})`, email);
+  return shapeAdmin(admin);
+}
+
+async function updateAdmin(actorId, actorName, targetId, { role, isActive }) {
+  if (targetId === actorId && (role !== undefined || isActive === false)) {
+    throw ApiError.badRequest("You can't change your own role or deactivate your own account");
+  }
+  const admin = await prisma.adminUser.findUnique({ where: { id: targetId } });
+  if (!admin) throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
+
+  const data = {};
+  if (role !== undefined) data.role = role;
+  if (isActive !== undefined) data.isActive = isActive;
+  const updated = await prisma.adminUser.update({ where: { id: targetId }, data });
+  await logAdminAction(actorId, actorName, `Updated admin (${Object.keys(data).join(', ')})`, admin.email);
+  return shapeAdmin(updated);
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -312,6 +431,82 @@ async function getDashboardStats({ from, to } = {}) {
   };
 }
 
+// ─── Revenue (Super Admin only) ────────────────────────────────────────────────
+
+// Our DB never stores the plan's price — Razorpay is the source of truth —
+// so MRR is computed from a live plan lookup, not a hand-maintained env var
+// that could silently drift from what Razorpay actually charges.
+let planAmountCache = null; // { amount, currency, fetchedAt }
+async function getActivePlanAmount() {
+  if (planAmountCache && Date.now() - planAmountCache.fetchedAt < 60 * 60 * 1000) {
+    return planAmountCache;
+  }
+  if (!env.RAZORPAY.planId) return { amount: 0, currency: 'INR' };
+  try {
+    const razorpay = require('../../config/razorpay');
+    const plan = await razorpay.plans.fetch(env.RAZORPAY.planId);
+    planAmountCache = { amount: plan.item.amount / 100, currency: plan.item.currency, fetchedAt: Date.now() };
+    return planAmountCache;
+  } catch (err) {
+    logger.error('[revenue] failed to fetch Razorpay plan', { err: err.message });
+    return { amount: 0, currency: 'INR' };
+  }
+}
+
+async function getRevenueStats() {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [activeCount, cancelledThisMonth, newThisMonth, totalEverSubscribed, plan] = await Promise.all([
+    prisma.subscription.count({ where: { status: 'ACTIVE' } }),
+    prisma.subscription.count({ where: { status: 'CANCELLED', updatedAt: { gte: startOfMonth } } }),
+    prisma.subscription.count({ where: { createdAt: { gte: startOfMonth } } }),
+    prisma.subscription.count(),
+    getActivePlanAmount(),
+  ]);
+
+  // Simple month-over-month: active count at the start of this month ≈
+  // (current active) + (cancelled this month) - (new this month) — good
+  // enough for a churn-rate signal without a dedicated snapshot table.
+  const activeAtMonthStart = Math.max(1, activeCount + cancelledThisMonth - newThisMonth);
+  const churnRate = activeAtMonthStart > 0 ? (cancelledThisMonth / activeAtMonthStart) * 100 : 0;
+
+  const [totalSignupsEver, premiumUsers] = await Promise.all([
+    prisma.user.count({ where: { role: { not: 'ADMIN' }, status: { not: 'DELETED' } } }),
+    prisma.user.count({ where: { isPremium: true } }),
+  ]);
+  const conversionRate = totalSignupsEver > 0 ? (premiumUsers / totalSignupsEver) * 100 : 0;
+
+  // Last 6 months of new-subscription counts, for a simple trend chart.
+  const monthly = [];
+  for (let i = 5; i >= 0; i--) {
+    const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+    monthly.push({ start, end });
+  }
+  const monthlyNewCounts = await Promise.all(
+    monthly.map(({ start, end }) => prisma.subscription.count({ where: { createdAt: { gte: start, lt: end } } })),
+  );
+  const revenueTrend = monthly.map(({ start }, i) => ({
+    month: start.toLocaleString('en-US', { month: 'short', year: '2-digit' }),
+    newSubscriptions: monthlyNewCounts[i],
+    revenue: monthlyNewCounts[i] * plan.amount,
+  }));
+
+  return {
+    mrr: activeCount * plan.amount,
+    currency: plan.currency,
+    activeSubscribers: activeCount,
+    newThisMonth,
+    cancelledThisMonth,
+    churnRatePercent: Math.round(churnRate * 10) / 10,
+    conversionRatePercent: Math.round(conversionRate * 10) / 10,
+    totalPremiumUsers: premiumUsers,
+    totalEverSubscribed,
+    revenueTrend,
+  };
+}
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 async function listUsers(query = {}) {
@@ -372,6 +567,50 @@ async function deleteUser(adminId, adminName, userId) {
   await prisma.user.update({ where: { id: userId }, data: { status: 'DELETED' } });
   await logAdminAction(adminId, adminName, 'Deleted user', user.mobileNumber);
   return { ok: true };
+}
+
+// Bulk suspend only — bulk delete is intentionally not offered here; a
+// destructive multi-account action deserves the deliberate friction of doing
+// it one at a time.
+async function bulkSuspendUsers(adminId, adminName, userIds) {
+  if (!Array.isArray(userIds) || userIds.length === 0) throw ApiError.badRequest('No users selected');
+  if (userIds.length > 200) throw ApiError.badRequest('Too many users selected (max 200 at a time)');
+
+  const result = await prisma.user.updateMany({
+    where: { id: { in: userIds }, status: 'ACTIVE' },
+    data: { status: 'SUSPENDED' },
+  });
+  await logAdminAction(adminId, adminName, 'Bulk suspended users', `${result.count} user(s)`);
+  return { ok: true, count: result.count };
+}
+
+// ─── CSV export ───────────────────────────────────────────────────────────────
+
+function toCsv(rows, columns) {
+  const escape = (v) => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = columns.map((c) => c.label).join(',');
+  const body = rows.map((row) => columns.map((c) => escape(c.get(row))).join(',')).join('\n');
+  return `${header}\n${body}`;
+}
+
+async function exportUsersCsv() {
+  const users = await prisma.user.findMany({
+    where: { role: { not: 'ADMIN' }, status: { not: 'DELETED' } },
+    orderBy: { createdAt: 'desc' },
+    include: { creatorProfile: { select: { name: true, email: true } }, freelancerProfile: { select: { name: true, email: true } } },
+  });
+  return toCsv(users, [
+    { label: 'Name', get: (u) => u.creatorProfile?.name || u.freelancerProfile?.name || '' },
+    { label: 'Email', get: (u) => u.creatorProfile?.email || u.freelancerProfile?.email || '' },
+    { label: 'Phone', get: (u) => `${u.countryCode}${u.mobileNumber}` },
+    { label: 'Role', get: (u) => u.role },
+    { label: 'Status', get: (u) => u.status },
+    { label: 'Premium', get: (u) => (u.isPremium ? 'Yes' : 'No') },
+    { label: 'Joined', get: (u) => u.createdAt.toISOString() },
+  ]);
 }
 
 // ─── Creators ─────────────────────────────────────────────────────────────────
@@ -516,6 +755,24 @@ async function deletePost(adminId, adminName, postId) {
   return { ok: true };
 }
 
+const BULK_POST_ACTIONS = {
+  approve: { isActive: true, isHidden: false },
+  hide: { isHidden: true },
+  restore: { isActive: true, isHidden: false },
+  delete: { isActive: false },
+};
+
+async function bulkModeratePosts(adminId, adminName, postIds, action) {
+  const data = BULK_POST_ACTIONS[action];
+  if (!data) throw ApiError.badRequest('Unknown bulk action');
+  if (!Array.isArray(postIds) || postIds.length === 0) throw ApiError.badRequest('No posts selected');
+  if (postIds.length > 200) throw ApiError.badRequest('Too many posts selected (max 200 at a time)');
+
+  const result = await prisma.post.updateMany({ where: { id: { in: postIds } }, data });
+  await logAdminAction(adminId, adminName, `Bulk ${action} posts`, `${result.count} post(s)`);
+  return { ok: true, count: result.count };
+}
+
 // ─── Collaborations ───────────────────────────────────────────────────────────
 
 async function listCollaborations(query = {}) {
@@ -642,6 +899,34 @@ async function reviewReport(adminId, adminName, reportId, status) {
   });
   await logAdminAction(adminId, adminName, `${status === 'reviewed' ? 'Reviewed' : 'Dismissed'} report`, report.targetName);
   return { ok: true };
+}
+
+async function getReportSlaStats() {
+  const [pending, resolved24h] = await Promise.all([
+    prisma.report.findMany({ where: { status: 'PENDING' }, select: { createdAt: true } }),
+    prisma.report.findMany({
+      where: { status: { in: ['REVIEWED', 'DISMISSED'] }, reviewedAt: { not: null } },
+      select: { createdAt: true, reviewedAt: true },
+      orderBy: { reviewedAt: 'desc' },
+      take: 200, // recent sample — enough for a meaningful average without scanning the whole table
+    }),
+  ]);
+
+  const now = Date.now();
+  const pendingAges = pending.map((r) => (now - r.createdAt.getTime()) / (1000 * 60 * 60)); // hours
+  const avgPendingAgeHours = pendingAges.length ? pendingAges.reduce((a, b) => a + b, 0) / pendingAges.length : 0;
+  const oldestPendingHours = pendingAges.length ? Math.max(...pendingAges) : 0;
+
+  const resolutionTimes = resolved24h.map((r) => (r.reviewedAt.getTime() - r.createdAt.getTime()) / (1000 * 60 * 60));
+  const avgResolutionHours = resolutionTimes.length ? resolutionTimes.reduce((a, b) => a + b, 0) / resolutionTimes.length : 0;
+
+  return {
+    pendingCount: pending.length,
+    avgPendingAgeHours: Math.round(avgPendingAgeHours * 10) / 10,
+    oldestPendingHours: Math.round(oldestPendingHours * 10) / 10,
+    avgResolutionHours: Math.round(avgResolutionHours * 10) / 10,
+    sampleSize: resolutionTimes.length,
+  };
 }
 
 // ─── Blocks ───────────────────────────────────────────────────────────────────
@@ -800,6 +1085,65 @@ async function updateCategory(adminId, adminName, id, data) {
   return shapeCategory(category);
 }
 
+// ─── Broadcast (Super Admin only) ──────────────────────────────────────────────
+
+const BROADCAST_TARGETS = {
+  all: { role: { not: 'ADMIN' }, status: 'ACTIVE' },
+  creators: { role: 'CREATOR', status: 'ACTIVE' },
+  freelancers: { role: 'FREELANCER', status: 'ACTIVE' },
+  premium: { isPremium: true, status: 'ACTIVE' },
+};
+
+async function broadcastNotification(adminId, adminName, { title, body, target }) {
+  const where = BROADCAST_TARGETS[target];
+  if (!where) throw ApiError.badRequest('Unknown target audience');
+
+  const [devices, legacyUsers] = await Promise.all([
+    prisma.fcmDevice.findMany({ where: { user: where }, select: { token: true } }),
+    prisma.user.findMany({ where: { ...where, fcmToken: { not: null } }, select: { fcmToken: true } }),
+  ]);
+  const tokens = [...new Set([...devices.map((d) => d.token), ...legacyUsers.map((u) => u.fcmToken)])];
+
+  if (tokens.length === 0) {
+    await logAdminAction(adminId, adminName, `Broadcast to ${target} (0 recipients)`, title);
+    return { ok: true, recipientCount: 0, sentCount: 0 };
+  }
+
+  const admin = require('firebase-admin');
+  const data = { type: 'ANNOUNCEMENT' };
+  // Firebase's multicast caps at 500 tokens per call.
+  const chunks = [];
+  for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
+
+  let sentCount = 0;
+  const deadTokens = [];
+  for (const chunk of chunks) {
+    try {
+      const res = await admin.messaging().sendEachForMulticast({
+        tokens: chunk,
+        notification: { title, body },
+        data,
+        android: { priority: 'high' },
+        apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: 'default' } } },
+      });
+      sentCount += res.successCount;
+      res.responses.forEach((r, i) => {
+        if (!r.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(r.error?.code)) {
+          deadTokens.push(chunk[i]);
+        }
+      });
+    } catch (err) {
+      logger.error('[broadcast] chunk send failed', { err: err.message });
+    }
+  }
+  if (deadTokens.length) {
+    await prisma.fcmDevice.deleteMany({ where: { token: { in: deadTokens } } }).catch(() => {});
+  }
+
+  await logAdminAction(adminId, adminName, `Broadcast to ${target} (${tokens.length} recipients)`, title);
+  return { ok: true, recipientCount: tokens.length, sentCount };
+}
+
 // ─── Activity Logs ────────────────────────────────────────────────────────────
 
 async function listActivityLogs(query = {}) {
@@ -815,12 +1159,22 @@ async function listActivityLogs(query = {}) {
 
 module.exports = {
   loginAdmin,
+  verifyTwoFactorLogin,
+  setupTwoFactor,
+  enableTwoFactor,
+  disableTwoFactor,
+  listAdmins,
+  createAdmin,
+  updateAdmin,
   getDashboardStats,
+  getRevenueStats,
   listUsers,
   getUserById,
   suspendUser,
   unsuspendUser,
   deleteUser,
+  bulkSuspendUsers,
+  exportUsersCsv,
   listCreators,
   listFreelancers,
   listPosts,
@@ -828,10 +1182,12 @@ module.exports = {
   restorePost,
   approvePost,
   deletePost,
+  bulkModeratePosts,
   listCollaborations,
   listChats,
   listReports,
   reviewReport,
+  getReportSlaStats,
   listBlocks,
   listSubscriptions,
   grantPremium,
@@ -839,5 +1195,6 @@ module.exports = {
   listCategoriesAdmin,
   createCategory,
   updateCategory,
+  broadcastNotification,
   listActivityLogs,
 };
