@@ -2,10 +2,31 @@ const { prisma } = require('../../config/db');
 const { ROLES, OPPOSITE_FEED_ROLE } = require('../../constants/roles');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
 const { buildPostInclude, shapePost, resolveCategoryMap, notExpiredWhere } = require('../posts/post.service');
+const categoryService = require('../categories/category.service');
 const cache = require('../../services/cache/cache.service');
 
 // Feed TTL: 90 seconds — fresh enough for real-time feel, saves massive DB load
 const FEED_TTL = 90;
+
+// A creator's post names the type of freelancer it wants (Post.category, free
+// text picked from the app's fixed CREATOR_CATEGORIES list in create-post.tsx).
+// Freelancer profiles categorise themselves against the Category table instead.
+// This maps each post-side label to the freelancer-category slugs it's relevant
+// to, so a freelancer's feed can show only work they actually do. Labels with
+// no entry here (e.g. 'Models', which has no freelancer category) and null
+// categories deliberately fail open — a post must never vanish for everyone
+// just because we can't classify it.
+const POST_CATEGORY_TO_FREELANCER_SLUGS = {
+  'Photography': ['photography'],
+  'Editors': ['editors', 'video-editing'],
+  'Videography': ['editors', 'video-editing'],
+  'Growth Specialist': ['social-media'],
+  'Script Writers': ['content-writing'],
+  'Styling & makeup': ['styling-makeup'],
+  'Fashion Designers': ['styling-makeup', 'graphic-design'],
+  'Property Rental': ['property-rental'],
+  'Voice Over': ['music-production'],
+};
 
 function feedCacheKey(userId, role, query) {
   const q = [
@@ -53,6 +74,32 @@ async function getFeed(user, query = {}) {
     if (blocks.length) {
       const hiddenIds = blocks.map((b) => (b.blockerId === user.id ? b.blockedId : b.blockerId));
       where.userId = { notIn: hiddenIds };
+    }
+  }
+
+  // A freelancer's feed (Home and Explore both come through here) only shows
+  // creator posts asking for what that freelancer actually does — a video
+  // editor shouldn't wade through photography or modelling requests. Hidden
+  // labels are computed (rather than allowed ones) so unknown/legacy labels
+  // and category-less posts stay visible to everyone.
+  if (user && user.role === ROLES.FREELANCER) {
+    const profile = await prisma.freelancerProfile.findUnique({
+      where: { userId: user.id },
+      select: { categories: true },
+    });
+    const catIds = profile?.categories || [];
+    if (catIds.length) {
+      const catMap = await categoryService.resolveCategoryMap(catIds);
+      const mySlugs = new Set(catIds.map((id) => catMap.get(id)?.slug).filter(Boolean));
+      const hiddenLabels = Object.entries(POST_CATEGORY_TO_FREELANCER_SLUGS)
+        .filter(([, slugs]) => !slugs.some((s) => mySlugs.has(s)))
+        .map(([label]) => label);
+      if (hiddenLabels.length) {
+        where.AND = [
+          ...(where.AND || []),
+          { OR: [{ category: null }, { category: { notIn: hiddenLabels } }] },
+        ];
+      }
     }
   }
 
