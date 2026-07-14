@@ -33,6 +33,11 @@ const baseCreatorFields = {
 const createCreatorProfileSchema = Joi.object({
   ...baseCreatorFields,
   name: baseCreatorFields.name.required(),
+  // Required at signup (also drives the admin-only DigiTag) — stays optional
+  // on update so partial edits don't need to resend them. portfolioUrl
+  // intentionally stays optional — not every creator has one.
+  location: Joi.string().trim().min(1).max(120).required(),
+  language: Joi.string().trim().min(1).max(50).required(),
 });
 
 const updateCreatorProfileSchema = Joi.object(baseCreatorFields).min(1);
