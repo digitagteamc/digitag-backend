@@ -40,6 +40,9 @@ function truncate(str, len = 60) {
 function userBaseInclude() {
   return {
     category: { select: { id: true, name: true } },
+    // Admin-only internal tag (location+language+role+random) — never
+    // returned by any user-facing endpoint, only here.
+    userTags: { select: { role: true, tag: true } },
     creatorProfile: {
       select: {
         name: true, email: true, profilePicture: true, location: true,
@@ -70,6 +73,12 @@ function shapeProfileCategories(profile, categoryMap) {
   return (profile.categories || []).map((id) => categoryMap.get(id)?.name).filter(Boolean);
 }
 
+// Admin/staff-only internal tag for this user's active role — never exposed
+// on any user-facing endpoint (userBaseInclude() is only used by admin.service).
+function shapeDigiTag(user) {
+  return user.userTags?.find((t) => t.role === user.role)?.tag || null;
+}
+
 function shapeUser(user) {
   const cp = user.creatorProfile;
   const fp = user.freelancerProfile;
@@ -88,6 +97,7 @@ function shapeUser(user) {
     status: user.status === 'ACTIVE' ? 'active' : user.status === 'DELETED' ? 'deleted' : 'suspended',
     joinedAt: user.createdAt.toISOString(),
     avatar: profile?.profilePicture || null,
+    digiTag: shapeDigiTag(user),
   };
 }
 

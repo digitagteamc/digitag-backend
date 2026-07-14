@@ -3,6 +3,7 @@ const { ApiError } = require('../../utils/apiResponse');
 const MESSAGES = require('../../constants/messages');
 const userService = require('../users/user.service');
 const { generateTagId } = require('../../utils/generateTagId');
+const { ensureUserTag } = require('../../utils/generateUserTag');
 
 /**
  * Factory that produces a role-specific profile service.
@@ -42,6 +43,10 @@ function buildProfileService({ model, role }) {
     const tagId = await generateTagId({ role, model });
 
     const profile = await delegate().create({ data: { ...data, userId, tagId } });
+
+    // Admin-only internal tag — never surfaced to the app, so a failure here
+    // must not break signup for the user.
+    await ensureUserTag({ userId, role, location: data.location, language: data.language }).catch(() => {});
 
     await userService.recomputeProfileCompletion(userId);
     return profile;

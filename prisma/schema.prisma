@@ -168,6 +168,7 @@ model User {
   savedPosts             SavedPost[]
   fcmDevices             FcmDevice[]
   notifications          Notification[]
+  userTags               UserTag[]
 
   @@index([role])
   @@index([mobileNumber])
@@ -619,6 +620,23 @@ enum ReportType {
   // App bug/feedback report from the Report Issue screen — surfaces in the
   // same admin Reports queue as user/post reports.
   ISSUE
+}
+
+// The "DigiTag": an internal tag generated at signup from the user's
+// location + language + role char + 5 random digits (e.g. HYD-TEL-C-48291).
+// Deliberately its own table, NOT a profile column — profile objects are
+// returned by many public endpoints, and this tag is for admin/staff eyes
+// only. Linked to the user's public tagId (245C457-style) via userId.
+model UserTag {
+  id        String   @id @default(uuid())
+  userId    String
+  role      UserRole
+  tag       String   @unique
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
 }
 
 // "Notify Me" waitlist from the home hero's Brands/Agencies coming-soon slide.
