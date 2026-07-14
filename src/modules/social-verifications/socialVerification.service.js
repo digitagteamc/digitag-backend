@@ -90,7 +90,17 @@ async function socialAccount(platform, code) {
   return { id: data.id, name: data.name || data.id, followers: null };
 }
 async function complete(platform, query) {
-  const { id } = readState(query.state); const record = await prisma.socialVerification.findUnique({ where: { id } });
+  // A bad/expired/tampered state must still send the browser back into the app
+  // (as FAILED) rather than dead-ending on raw JSON — the mobile side only
+  // needs the redirect to fire to close its in-app browser session; it looks
+  // up the real status separately using the id it already holds.
+  let id;
+  try {
+    ({ id } = readState(query.state));
+  } catch {
+    return { id: null, status: 'FAILED' };
+  }
+  const record = await prisma.socialVerification.findUnique({ where: { id } });
   if (!record || record.platform !== platform || record.status !== 'PENDING' || record.expiresAt < new Date() || query.error) { if (record?.status === 'PENDING') await prisma.socialVerification.update({ where: { id }, data: { status: 'FAILED' } }); return { id, status: 'FAILED' }; }
   try {
     const account = await socialAccount(platform, query.code);
