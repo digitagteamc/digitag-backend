@@ -28,14 +28,15 @@ const followers = asyncHandler(async (req, res) => {
   return success(res, { message: 'Fetched successfully', data });
 });
 
-// Another user's public follow lists — same shape as the self variants.
+// Another user's public follow lists — same shape as the self variants,
+// hidden entirely if either side has blocked the other (see service).
 const userFollowing = asyncHandler(async (req, res) => {
-  const data = await service.listFollowing(req.params.userId);
+  const data = await service.listFollowing(req.params.userId, req.user.id);
   return success(res, { message: 'Fetched successfully', data });
 });
 
 const userFollowers = asyncHandler(async (req, res) => {
-  const data = await service.listFollowers(req.params.userId);
+  const data = await service.listFollowers(req.params.userId, req.user.id);
   return success(res, { message: 'Fetched successfully', data });
 });
 

@@ -5,6 +5,7 @@ const { ROLES } = require('../../constants/roles');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
 const s3UploadService = require('../../services/s3/s3Upload.service');
 const push = require('../../services/push/push.service');
+const { isBlockedBetween } = require('../blocks/block.service');
 const logger = require('../../utils/logger');
 const categoryService = require('../categories/category.service');
 
@@ -173,8 +174,11 @@ async function createPost(user, data) {
         },
       });
       await Promise.all(
-        collabs.map((c) => {
+        collabs.map(async (c) => {
           const other = c.sender.id === user.id ? c.receiver : c.sender;
+          // A collaboration surviving a block (blocking doesn't cancel it) must
+          // not keep pushing "new post" notifications from someone you blocked.
+          if (await isBlockedBetween(user.id, other.id)) return;
           return push.sendToUser(other.id, (t) =>
             push.notificationMessage(
               t,

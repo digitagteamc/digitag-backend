@@ -197,7 +197,10 @@ async function sendMessage(userId, conversationId, content, imageUrl = null, rep
   if (conv.participantAId !== userId && conv.participantBId !== userId) {
     throw ApiError.forbidden('Not a participant in this conversation');
   }
-  if (conv.collaboration && conv.collaboration.status !== 'ACCEPTED') {
+  // COMPLETED is a successful collaboration finishing normally, not a revoke —
+  // messaging must stay open afterward, or every collab quietly locks itself
+  // out of its own chat the moment the work it was for gets marked done.
+  if (conv.collaboration && !['ACCEPTED', 'COMPLETED'].includes(conv.collaboration.status)) {
     throw ApiError.forbidden('Messaging is unlocked only after the collaboration is accepted');
   }
 
@@ -333,10 +336,11 @@ async function openConversationWith(userId, otherUserId) {
     };
   }
 
-  // No prior conversation — require an accepted collab in either direction.
+  // No prior conversation — require an accepted (or already-completed) collab
+  // in either direction; a finished collaboration is still a valid reason to talk.
   const acceptedCollab = await prisma.collaboration.findFirst({
     where: {
-      status: 'ACCEPTED',
+      status: { in: ['ACCEPTED', 'COMPLETED'] },
       OR: [
         { senderId: userId, receiverId: otherUserId },
         { senderId: otherUserId, receiverId: userId },

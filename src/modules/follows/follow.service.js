@@ -1,7 +1,7 @@
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
-const { assertNotBlocked } = require('../blocks/block.service');
+const { assertNotBlocked, isBlockedBetween } = require('../blocks/block.service');
 const push = require('../../services/push/push.service');
 
 const userInclude = {
@@ -69,7 +69,12 @@ async function unfollow(followerId, followingId) {
   return { unfollowed: true };
 }
 
-async function listFollowing(userId) {
+// viewerId is the person asking to see the list — omitted (or equal to userId)
+// when viewing your own. While either side has blocked the other, that
+// person's followers/following stay hidden from the blocked party; the
+// blocker themselves can still browse the blocked user's profile freely.
+async function listFollowing(userId, viewerId) {
+  if (viewerId && viewerId !== userId && (await isBlockedBetween(userId, viewerId))) return [];
   const rows = await prisma.follow.findMany({
     where: { followerId: userId },
     include: { following: userInclude },
@@ -78,7 +83,8 @@ async function listFollowing(userId) {
   return rows.map((r) => shapeUser(r.following));
 }
 
-async function listFollowers(userId) {
+async function listFollowers(userId, viewerId) {
+  if (viewerId && viewerId !== userId && (await isBlockedBetween(userId, viewerId))) return [];
   const rows = await prisma.follow.findMany({
     where: { followingId: userId },
     include: { follower: userInclude },
