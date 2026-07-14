@@ -2,6 +2,7 @@ const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
 const { assertNotBlocked } = require('../blocks/block.service');
+const push = require('../../services/push/push.service');
 
 const userInclude = {
   select: {
@@ -42,7 +43,25 @@ async function follow(followerId, followingId, followerRole) {
   });
   if (existing) return existing;
 
-  return prisma.follow.create({ data: { followerId, followingId } });
+  const created = await prisma.follow.create({ data: { followerId, followingId } });
+
+  const followerUser = await prisma.user.findUnique({
+    where: { id: followerId },
+    select: { creatorProfile: { select: { name: true } }, freelancerProfile: { select: { name: true } } },
+  });
+  const followerName = followerUser?.creatorProfile?.name || followerUser?.freelancerProfile?.name || 'Someone';
+  // notificationMessage (not the data-only builders) — this is exactly what
+  // makes it persist to the Notifications tab and show a foreground banner,
+  // same as every other notification type.
+  await push.sendToUser(followingId, (t) =>
+    push.notificationMessage(
+      t,
+      { type: 'NEW_FOLLOWER', followerId },
+      { title: 'New Follower', body: `${followerName} started following you` },
+    ),
+  );
+
+  return created;
 }
 
 async function unfollow(followerId, followingId) {
