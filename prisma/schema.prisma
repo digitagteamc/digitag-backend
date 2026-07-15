@@ -720,11 +720,28 @@ enum SubscriptionStatus {
   EXPIRED
 }
 
+enum SubscriptionProvider {
+  RAZORPAY
+  APPLE
+}
+
 model Subscription {
-  id                     String             @id @default(uuid())
-  userId                 String             @unique
-  razorpaySubscriptionId String             @unique
-  razorpayPlanId         String
+  id     String               @id @default(uuid())
+  userId String               @unique
+  // Android/web go through Razorpay; iOS must use StoreKit per Apple 3.1.1 —
+  // provider says which billing system owns this row. Razorpay fields stay
+  // required-shaped in practice but are nullable so an Apple row doesn't need
+  // fake Razorpay ids, and vice versa.
+  provider               SubscriptionProvider @default(RAZORPAY)
+  razorpaySubscriptionId String?              @unique
+  razorpayPlanId         String?
+  // Apple's own subscription identity: originalTransactionId stays the same
+  // across renewals of the same subscription (that's what Server
+  // Notifications key off), transactionId is the latest individual purchase/
+  // renewal event.
+  appleOriginalTransactionId String? @unique
+  appleTransactionId         String?
+  appleProductId             String?
   status                 SubscriptionStatus @default(CREATED)
   currentStart           DateTime?
   currentEnd             DateTime?

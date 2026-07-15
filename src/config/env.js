@@ -106,6 +106,20 @@ const env = {
     webhookSecret: optional('RAZORPAY_WEBHOOK_SECRET'),
   },
 
+  // iOS In-App Purchase (StoreKit) — from an App Store Connect API key
+  // (Users and Access > Integrations > In-App Purchase), scoped to this app.
+  // APPLE_PRIVATE_KEY is the .p8 file's contents (keep the \n-escaped PEM
+  // format, same convention as FIREBASE_PRIVATE_KEY below).
+  APPLE: {
+    issuerId: optional('APPLE_ISSUER_ID'),
+    keyId: optional('APPLE_KEY_ID'),
+    privateKey: optional('APPLE_PRIVATE_KEY'),
+    bundleId: optional('APPLE_BUNDLE_ID'),
+    // 'true' while testing against sandbox purchases (TestFlight/Xcode),
+    // switch to 'false' once real App Store purchases are live.
+    sandbox: optional('APPLE_IAP_SANDBOX') !== 'false',
+  },
+
   // Remote kill switch for the whole Premium surface (Upgrade button, Who
   // Viewed My Profile, Boost) — the app reads this from GET /config on
   // launch, so toggling it is just an env change + restart here, never an
