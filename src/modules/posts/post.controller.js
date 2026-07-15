@@ -66,4 +66,14 @@ const savedPostIds = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: ids });
 });
 
-module.exports = { create, update, remove, getById, myPosts, userPosts, save, unsave, savedPosts, savedPostIds };
+const boost = asyncHandler(async (req, res) => {
+  const data = await service.boostPost(req.user, req.params.id);
+  return success(res, { message: 'Post boosted for 24 hours', data });
+});
+
+const boostQuota = asyncHandler(async (req, res) => {
+  const data = await service.getBoostQuota(req.user.id);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
+module.exports = { create, update, remove, getById, myPosts, userPosts, save, unsave, savedPosts, savedPostIds, boost, boostQuota };

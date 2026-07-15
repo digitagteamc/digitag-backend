@@ -117,6 +117,25 @@ async function getFeed(user, query = {}) {
     };
   }
 
+  // Premium "Boost": a post with boostedUntil still in the future goes to the
+  // very top of page 1, above even the passive Premium sort below — this is
+  // the active, on-demand placement Boost is paying for, not just a tiebreak.
+  // Fetched and excluded from the main query (rather than expressed as an
+  // orderBy) because "boostedUntil > now" can't be a plain column sort: a
+  // long-expired boost must never outrank fresh unboosted content just for
+  // having a non-null timestamp.
+  let boostedItems = [];
+  if (page === 1) {
+    const boosted = await prisma.post.findMany({
+      where: { ...where, boostedUntil: { gt: new Date() } },
+      orderBy: { boostedUntil: 'desc' },
+      include: buildPostInclude(),
+    });
+    boostedItems = boosted;
+  }
+  const boostedIds = boostedItems.map((p) => p.id);
+  if (boostedIds.length) where.id = { notIn: boostedIds };
+
   const [items, total] = await Promise.all([
     prisma.post.findMany({
       where,
@@ -132,10 +151,11 @@ async function getFeed(user, query = {}) {
     prisma.post.count({ where }),
   ]);
 
-  const categoryMap = await resolveCategoryMap(items);
+  const allItems = [...boostedItems, ...items];
+  const categoryMap = await resolveCategoryMap(allItems);
   const result = {
-    items: items.map((p) => shapePost(p, categoryMap)),
-    meta: buildPaginationMeta({ total, page, limit }),
+    items: allItems.map((p) => shapePost(p, categoryMap)),
+    meta: buildPaginationMeta({ total: total + boostedItems.length, page, limit }),
   };
 
   if (cacheKey && !isFiltered) await cache.set(cacheKey, result, FEED_TTL);

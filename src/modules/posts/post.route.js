@@ -39,6 +39,8 @@ router.get('/me', authenticate, validateRequest({ query: schemas.listQuery }), c
 // Saved posts — must be before /:id so "saved" is not treated as a post ID
 router.get('/saved/list', authenticate, controller.savedPosts);
 router.get('/saved/ids', authenticate, controller.savedPostIds);
+// Same reasoning — must be registered before the generic /:id routes below.
+router.get('/boost/quota', authenticate, controller.boostQuota);
 
 const Joi = require('joi');
 const { uuid } = require('../../validations/common.validation');
@@ -55,5 +57,6 @@ router.get(
 router.get('/:id', optionalAuth, validateRequest({ params: idParam }), controller.getById);
 router.post('/:id/save', authenticate, validateRequest({ params: idParam }), controller.save);
 router.delete('/:id/save', authenticate, validateRequest({ params: idParam }), controller.unsave);
+router.post('/:id/boost', authenticate, validateRequest({ params: idParam }), controller.boost);
 
 module.exports = router;

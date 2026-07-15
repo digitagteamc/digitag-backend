@@ -218,6 +218,47 @@ async function updatePost(user, id, data) {
   return shapePost(post, await resolveCategoryMap([post]));
 }
 
+const BOOST_DURATION_HOURS = 24;
+const FREE_BOOSTS_PER_MONTH = 3; // Premium only — this cap applies to Premium users, not free ones
+
+function startOfCurrentMonth() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+/** Premium "Boost": jumps this post to the top of feeds for 24h. A monthly
+ *  allowance (not unlimited) so it stays a deliberate choice per post rather
+ *  than something left permanently on. */
+async function getBoostQuota(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { isPremium: true } });
+  if (!user?.isPremium) return { isPremium: false, used: 0, limit: FREE_BOOSTS_PER_MONTH, remaining: 0 };
+  const used = await prisma.post.count({
+    where: { userId, boostedAt: { gte: startOfCurrentMonth() } },
+  });
+  return { isPremium: true, used, limit: FREE_BOOSTS_PER_MONTH, remaining: Math.max(FREE_BOOSTS_PER_MONTH - used, 0) };
+}
+
+async function boostPost(user, id) {
+  const existing = await prisma.post.findUnique({ where: { id } });
+  if (!existing || !existing.isActive) throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
+  if (existing.userId !== user.id) throw ApiError.forbidden(MESSAGES.POST.NOT_OWNER);
+
+  const quota = await getBoostQuota(user.id);
+  if (!quota.isPremium) throw ApiError.forbidden('Boost is a Premium feature. Upgrade to Premium to boost your posts.');
+  if (quota.remaining <= 0) {
+    throw ApiError.forbidden(`You've used all ${FREE_BOOSTS_PER_MONTH} of your Premium boosts this month. It resets on the 1st.`);
+  }
+
+  const now = new Date();
+  const post = await prisma.post.update({
+    where: { id },
+    data: { boostedAt: now, boostedUntil: new Date(now.getTime() + BOOST_DURATION_HOURS * 60 * 60 * 1000) },
+    include: buildPostInclude(),
+  });
+  await invalidateAllFeeds();
+  return shapePost(post, await resolveCategoryMap([post]));
+}
+
 async function deletePost(user, id) {
   const existing = await prisma.post.findUnique({ where: { id } });
   if (!existing || !existing.isActive) throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
@@ -323,6 +364,8 @@ module.exports = {
   createPost,
   updatePost,
   deletePost,
+  boostPost,
+  getBoostQuota,
   getPostById,
   listMyPosts,
   listUserPosts,
