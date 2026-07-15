@@ -147,6 +147,21 @@ async function respondToCollaboration(userId, collabId, action) {
       data: { status: 'COMPLETED', respondedAt: new Date() },
       include: { sender: userInclude, receiver: userInclude, post: postInclude },
     });
+
+    // Tell the other party their work was marked done — same pattern as the
+    // accept/decline notifications, and persists to the Notifications tab.
+    const iAmSender = updated.senderId === userId;
+    const otherPartyId = iAmSender ? updated.receiverId : updated.senderId;
+    const completer = iAmSender ? updated.sender : updated.receiver;
+    const completerName = completer?.creatorProfile?.name || completer?.freelancerProfile?.name || 'Someone';
+    await push.sendToUser(otherPartyId, (t) =>
+      push.notificationMessage(
+        t,
+        { type: 'COLLAB_COMPLETED', collabId: updated.id },
+        { title: 'Collaboration Completed', body: `${completerName} marked your collaboration as complete` },
+      ),
+    );
+
     return shapeCollab(updated);
   }
 
