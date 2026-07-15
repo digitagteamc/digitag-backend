@@ -23,6 +23,7 @@ const subscriptionWebhookRoutes = require('../modules/subscriptions/subscription
 const notificationRoutes = require('../modules/notifications/notification.route');
 const waitlistRoutes = require('../modules/waitlist/waitlist.route');
 const env = require('../config/env');
+const { optionalAuth } = require('../middlewares/authMiddleware');
 
 const router = Router();
 
@@ -32,8 +33,13 @@ router.get('/health', (_req, res) => {
 
 // Remote flags the app reads on launch — a fast, no-deploy way to show/hide
 // whole feature surfaces (currently just Premium) without an app-store build.
-router.get('/config', (_req, res) => {
-  res.json({ success: true, data: { premiumEnabled: env.PREMIUM_ENABLED } });
+// A reviewer account (see PREMIUM_REVIEWER_PHONE_NUMBERS) always sees it on,
+// regardless of the global flag — Apple's App Review needs to be able to
+// test the subscription at any point during their (unpredictable-length)
+// review, without exposing it to real users the whole time it's pending.
+router.get('/config', optionalAuth, (req, res) => {
+  const isReviewer = req.user && env.PREMIUM_REVIEWER_PHONE_NUMBERS.includes(req.user.mobileNumber);
+  res.json({ success: true, data: { premiumEnabled: env.PREMIUM_ENABLED || Boolean(isReviewer) } });
 });
 
 router.use('/auth', authRoutes);

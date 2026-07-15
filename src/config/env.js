@@ -125,6 +125,15 @@ const env = {
   // launch, so toggling it is just an env change + restart here, never an
   // app-store build. Defaults OFF; flip to 'true' when ready to launch.
   PREMIUM_ENABLED: optional('PREMIUM_ENABLED') === 'true',
+  // Accounts that always see Premium regardless of the flag above — lets
+  // Apple's App Review reviewer test the subscription (they log in with one
+  // of these numbers) while it stays hidden from every real user for the
+  // entire review window, however long that takes. Comma-separated, no
+  // leading +91 (matches how mobileNumber is stored).
+  PREMIUM_REVIEWER_PHONE_NUMBERS: optional('PREMIUM_REVIEWER_PHONE_NUMBERS', '')
+    .split(',')
+    .map((n) => n.trim())
+    .filter(Boolean),
 };
 
 env.isProduction = env.NODE_ENV === 'production';
