@@ -189,7 +189,10 @@ async function respondToCollaboration(userId, collabId, action) {
       });
 
       if (existingConv) {
-        if (!existingConv.collaborationId) {
+        // Always re-point at the newly accepted collab: a conversation left
+        // linked to an old COMPLETED collab would stay locked forever even
+        // though the pair just started a fresh collaboration.
+        if (existingConv.collaborationId !== collabId) {
           await tx.conversation.update({
             where: { id: existingConv.id },
             data: { collaborationId: collabId },

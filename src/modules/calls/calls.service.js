@@ -28,6 +28,23 @@ async function initiateCall(callerId, calleeId) {
   if (callerId === calleeId) throw ApiError.badRequest('Cannot call yourself');
   await assertNotBlocked(callerId, calleeId);
 
+  // Same product rule as messaging: contact is open only while a collaboration
+  // is ACCEPTED — completing it closes calls too. Enforced here, not just in
+  // the UI, so a stale client can't ring someone after the collab ended.
+  const activeCollab = await prisma.collaboration.findFirst({
+    where: {
+      status: 'ACCEPTED',
+      OR: [
+        { senderId: callerId, receiverId: calleeId },
+        { senderId: calleeId, receiverId: callerId },
+      ],
+    },
+    select: { id: true },
+  });
+  if (!activeCollab) {
+    throw ApiError.forbidden('Calls are available only during an active collaboration');
+  }
+
   const [caller, callee] = await Promise.all([
     prisma.user.findUnique({
       where: { id: callerId },

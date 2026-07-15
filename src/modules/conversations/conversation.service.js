@@ -107,7 +107,7 @@ async function listConversations(userId) {
 async function getConversationById(userId, id) {
   const c = await prisma.conversation.findUnique({
     where: { id },
-    include: { participantA: userInclude, participantB: userInclude },
+    include: { participantA: userInclude, participantB: userInclude, collaboration: { select: { status: true } } },
   });
   if (!c) throw ApiError.notFound('Conversation not found');
   if (c.participantAId !== userId && c.participantBId !== userId) {
@@ -117,6 +117,9 @@ async function getConversationById(userId, id) {
   return {
     id: c.id,
     collaborationId: c.collaborationId,
+    // Lets the chat screen lock the composer (e.g. COMPLETED = read-only chat)
+    // instead of the user discovering it via a failed send.
+    collabStatus: c.collaboration?.status || null,
     lastMessageAt: c.lastMessageAt,
     createdAt: c.createdAt,
     other: shapeParticipant(other),
@@ -197,11 +200,16 @@ async function sendMessage(userId, conversationId, content, imageUrl = null, rep
   if (conv.participantAId !== userId && conv.participantBId !== userId) {
     throw ApiError.forbidden('Not a participant in this conversation');
   }
-  // COMPLETED is a successful collaboration finishing normally, not a revoke —
-  // messaging must stay open afterward, or every collab quietly locks itself
-  // out of its own chat the moment the work it was for gets marked done.
-  if (conv.collaboration && !['ACCEPTED', 'COMPLETED'].includes(conv.collaboration.status)) {
-    throw ApiError.forbidden('Messaging is unlocked only after the collaboration is accepted');
+  // Product rule: chat is open only while the collaboration is ACCEPTED.
+  // Completing it closes messaging (and calls) — history stays readable, and
+  // a fresh collab between the same pair re-opens the chat because accepting
+  // re-points the conversation at the new collaboration.
+  if (conv.collaboration && conv.collaboration.status !== 'ACCEPTED') {
+    throw ApiError.forbidden(
+      conv.collaboration.status === 'COMPLETED'
+        ? 'This collaboration is completed — messaging is closed'
+        : 'Messaging is unlocked only after the collaboration is accepted',
+    );
   }
 
   const recipientId = conv.participantAId === userId ? conv.participantBId : conv.participantAId;
@@ -336,11 +344,11 @@ async function openConversationWith(userId, otherUserId) {
     };
   }
 
-  // No prior conversation — require an accepted (or already-completed) collab
-  // in either direction; a finished collaboration is still a valid reason to talk.
+  // No prior conversation — require a currently-ACCEPTED collab in either
+  // direction; completed collabs no longer open new conversations.
   const acceptedCollab = await prisma.collaboration.findFirst({
     where: {
-      status: { in: ['ACCEPTED', 'COMPLETED'] },
+      status: 'ACCEPTED',
       OR: [
         { senderId: userId, receiverId: otherUserId },
         { senderId: otherUserId, receiverId: userId },
