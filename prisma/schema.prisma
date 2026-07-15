@@ -169,6 +169,8 @@ model User {
   fcmDevices             FcmDevice[]
   notifications          Notification[]
   userTags               UserTag[]
+  profileViewsMade       ProfileView[]           @relation("ProfileViewViewer")
+  profileViewsReceived   ProfileView[]           @relation("ProfileViewViewed")
 
   @@index([role])
   @@index([mobileNumber])
@@ -280,10 +282,18 @@ model Post {
   budget            String?
   isActive          Boolean           @default(true)
   isHidden          Boolean           @default(false)
-  // Optional "boost" expiry — null means the post stays live forever. When
-  // set (from the creator's chosen boost duration), the post stops being
-  // shown to other users once this passes, but the owner can still see it.
+  // Optional visibility window — null means the post stays live forever. When
+  // set (from the creator's chosen "Post Visibility" duration at create time),
+  // the post stops being shown to other users once this passes, but the
+  // owner can still see it. Unrelated to boostedUntil below.
   expiresAt         DateTime?
+  // Premium "Boost" feature: while boostedUntil is in the future, this post
+  // sorts above everything else in feeds. boostedAt (when the boost button
+  // was last pressed) is what the monthly-allowance count is based on, kept
+  // separately from boostedUntil so a since-expired boost still counts
+  // toward the month it was used, not silently reset by reading boostedUntil.
+  boostedUntil      DateTime?
+  boostedAt         DateTime?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -297,6 +307,7 @@ model Post {
   @@index([createdAt])
   @@index([role, isActive, createdAt])
   @@index([expiresAt])
+  @@index([boostedUntil])
 }
 
 // -------------------------
@@ -504,6 +515,25 @@ model Block {
   @@unique([blockerId, blockedId])
   @@index([blockerId])
   @@index([blockedId])
+}
+
+// -------------------------
+// Premium: "Who Viewed My Profile"
+// -------------------------
+// One row per (viewer, viewed) pair — re-viewing updates viewedAt in place
+// rather than growing unbounded, which also naturally gives "most recently
+// viewed first" ordering for free via a simple sort.
+model ProfileView {
+  id       String   @id @default(uuid())
+  viewerId String
+  viewedId String
+  viewedAt DateTime @default(now())
+
+  viewer User @relation("ProfileViewViewer", fields: [viewerId], references: [id], onDelete: Cascade)
+  viewed User @relation("ProfileViewViewed", fields: [viewedId], references: [id], onDelete: Cascade)
+
+  @@unique([viewerId, viewedId])
+  @@index([viewedId, viewedAt])
 }
 
 // -------------------------

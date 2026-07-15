@@ -28,4 +28,9 @@ const withUser = asyncHandler(async (req, res) => {
   return success(res, { message: 'Fetched successfully', data });
 });
 
-module.exports = { create, list, respond, cancel, withUser };
+const quota = asyncHandler(async (req, res) => {
+  const data = await service.getCollabRequestQuota(req.user.id);
+  return success(res, { message: 'Fetched successfully', data });
+});
+
+module.exports = { create, list, respond, cancel, withUser, quota };

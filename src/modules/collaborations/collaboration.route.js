@@ -14,6 +14,7 @@ const router = Router();
 
 router.post('/', authenticate, validateRequest({ body: schemas.createSchema }), controller.create);
 router.get('/', authenticate, validateRequest({ query: schemas.listQuery }), controller.list);
+router.get('/quota', authenticate, controller.quota);
 router.get(
   '/with/:userId',
   authenticate,

@@ -33,6 +33,15 @@ function orderedPair(userIdA, userIdB) {
     : { participantAId: userIdB, participantBId: userIdA };
 }
 
+// Premium perk: free accounts get a limited number of outgoing collaboration
+// requests per calendar month (resets on the 1st); Premium is unlimited.
+const FREE_COLLAB_REQUESTS_PER_MONTH = 10;
+
+function startOfCurrentMonth() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
 function shapeCollab(collab) {
   if (!collab) return collab;
   return {
@@ -51,11 +60,29 @@ function shapeCollab(collab) {
   };
 }
 
+/** Free-tier monthly collab-request quota. Returns limit: null for Premium
+ *  (unlimited) so the mobile app can render "Unlimited" instead of a count. */
+async function getCollabRequestQuota(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { isPremium: true } });
+  if (user?.isPremium) return { used: 0, limit: null, remaining: null };
+  const used = await prisma.collaboration.count({
+    where: { senderId: userId, createdAt: { gte: startOfCurrentMonth() } },
+  });
+  return { used, limit: FREE_COLLAB_REQUESTS_PER_MONTH, remaining: Math.max(FREE_COLLAB_REQUESTS_PER_MONTH - used, 0) };
+}
+
 async function createCollaboration(senderId, { receiverId, postId = null, message = null }, senderRole) {
   if (senderId === receiverId) {
     throw ApiError.badRequest('You cannot send a collaboration request to yourself');
   }
   await assertNotBlocked(senderId, receiverId);
+
+  const quota = await getCollabRequestQuota(senderId);
+  if (quota.limit !== null && quota.used >= quota.limit) {
+    throw ApiError.forbidden(
+      `You've reached your monthly limit of ${FREE_COLLAB_REQUESTS_PER_MONTH} collaboration requests. Upgrade to Premium for unlimited requests.`,
+    );
+  }
 
   const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
   if (!receiver) throw ApiError.notFound('Recipient user not found');
@@ -262,4 +289,5 @@ module.exports = {
   respondToCollaboration,
   cancelCollaboration,
   getCollaborationWith,
+  getCollabRequestQuota,
 };
