@@ -7,6 +7,7 @@ const userInclude = {
     id: true,
     role: true,
     mobileNumber: true,
+    isPremium: true,
     creatorProfile: { select: { name: true, profilePicture: true, location: true, bio: true } },
     freelancerProfile: { select: { name: true, profilePicture: true, location: true, bio: true } },
   },
@@ -22,6 +23,7 @@ function shapeUser(u) {
     profilePicture: profile ? profile.profilePicture : null,
     location: profile ? profile.location : null,
     bio: profile ? profile.bio : null,
+    isPremium: Boolean(u.isPremium),
   };
 }
 

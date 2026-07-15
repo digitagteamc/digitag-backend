@@ -21,6 +21,7 @@ async function searchProfiles(user, q, limit = 20) {
                 profilePicture: true,
                 location: true,
                 category: { select: { id: true, name: true } },
+                user: { select: { isPremium: true } },
             },
             orderBy: { name: 'asc' },
             take: limit,
@@ -37,6 +38,7 @@ async function searchProfiles(user, q, limit = 20) {
                 profilePicture: true,
                 location: true,
                 category: { select: { id: true, name: true } },
+                user: { select: { isPremium: true } },
             },
             orderBy: { name: 'asc' },
             take: limit,
@@ -53,6 +55,7 @@ async function searchProfiles(user, q, limit = 20) {
             category: p.category?.name || null,
             categoryId: p.category?.id || null,
             location: p.location || null,
+            isPremium: Boolean(p.user?.isPremium),
         })),
         ...freelancers.map((p) => ({
             userId: p.userId,
@@ -63,6 +66,7 @@ async function searchProfiles(user, q, limit = 20) {
             category: p.category?.name || null,
             categoryId: p.category?.id || null,
             location: p.location || null,
+            isPremium: Boolean(p.user?.isPremium),
         })),
     ].sort((a, b) => a.name.localeCompare(b.name));
 

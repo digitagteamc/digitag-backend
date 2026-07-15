@@ -10,6 +10,7 @@ const userInclude = {
     role: true,
     mobileNumber: true,
     fcmToken: true,
+    isPremium: true,
     creatorProfile: { select: { name: true, profilePicture: true, location: true } },
     freelancerProfile: { select: { name: true, profilePicture: true, location: true } },
   },

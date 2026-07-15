@@ -16,6 +16,7 @@ const userInclude = {
     lastLoginAt: true,
     lastActiveAt: true,
     showOnlineStatus: true,
+    isPremium: true,
     creatorProfile: { select: { name: true, profilePicture: true, location: true } },
     freelancerProfile: { select: { name: true, profilePicture: true, location: true } },
   },
@@ -55,6 +56,7 @@ function shapeParticipant(user) {
     location: profile ? profile.location : null,
     lastLoginAt: hideActivity ? null : (user.lastLoginAt || null),
     lastActiveAt: hideActivity ? null : (user.lastActiveAt || null),
+    isPremium: Boolean(user.isPremium),
   };
 }
 
