@@ -13,7 +13,59 @@ async function getUserIdByTag(tagId) {
   return { userId: match.userId };
 }
 
-async function getUserById(id) {
+// Fire-and-forget — a logging failure must never break loading someone's
+// profile. Self-views don't count (viewing your own profile isn't a "view"),
+// and there's no viewerId at all for guests. Upsert on the unique pair keeps
+// this to one row per viewer, refreshing viewedAt, rather than growing
+// unbounded for repeat visits — which also gives "most recent first" free.
+function logProfileView(viewerId, viewedId) {
+  if (!viewerId || viewerId === viewedId) return;
+  prisma.profileView
+    .upsert({
+      where: { viewerId_viewedId: { viewerId, viewedId } },
+      create: { viewerId, viewedId },
+      update: { viewedAt: new Date() },
+    })
+    .catch(() => {});
+}
+
+/** Premium "Who Viewed My Profile" — gated on the caller's own isPremium,
+ *  not the viewed users'; views are logged for everyone so upgrading
+ *  immediately surfaces past views too, not just future ones. */
+async function getProfileViewers(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { isPremium: true } });
+  if (!user?.isPremium) throw ApiError.forbidden('Who Viewed My Profile is a Premium feature.');
+
+  const views = await prisma.profileView.findMany({
+    where: { viewedId: userId },
+    orderBy: { viewedAt: 'desc' },
+    take: 100,
+    include: {
+      viewer: {
+        select: {
+          id: true,
+          role: true,
+          creatorProfile: { select: { name: true, profilePicture: true } },
+          freelancerProfile: { select: { name: true, profilePicture: true } },
+        },
+      },
+    },
+  });
+
+  return views.map((v) => {
+    const profile = v.viewer.creatorProfile || v.viewer.freelancerProfile;
+    return {
+      userId: v.viewer.id,
+      role: v.viewer.role,
+      name: profile?.name || null,
+      profilePicture: profile?.profilePicture || null,
+      viewedAt: v.viewedAt,
+    };
+  });
+}
+
+async function getUserById(id, viewerId) {
+  logProfileView(viewerId, id);
   const [user, followerCount, followingCount, collabCount] = await Promise.all([
     // This endpoint is publicly browsable (no auth required) — select only
     // profile-facing fields, never mobileNumber/fcmToken/status/etc.
@@ -176,6 +228,7 @@ module.exports = {
   getUserById,
   getUserIdByTag,
   getUserStats,
+  getProfileViewers,
   recomputeProfileCompletion,
   getOnboardingStatus,
   getPrivacySettings,

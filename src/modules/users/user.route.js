@@ -22,6 +22,7 @@ router.get('/me/stats', authenticate, controller.getMyStats);
 router.get('/me/privacy-settings', authenticate, controller.getPrivacySettings);
 router.patch('/me/privacy-settings', authenticate, validateRequest({ body: privacySettingsBody }), controller.updatePrivacySettings);
 router.get('/me/export', authenticate, controller.exportMyData);
+router.get('/me/profile-viewers', authenticate, controller.getProfileViewers);
 // Profile browsing is public (Apple 5.1.1 — viewing a creator/freelancer profile isn't
 // account-based). Must be registered before /:id, otherwise "by-tag" is swallowed as an :id.
 router.get('/by-tag/:tagId', optionalAuth, validateRequest({ params: tagParam }), controller.getByTag);

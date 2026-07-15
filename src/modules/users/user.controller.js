@@ -9,7 +9,12 @@ const onboardingStatus = asyncHandler(async (req, res) => {
 });
 
 const getById = asyncHandler(async (req, res) => {
-  const data = await service.getUserById(req.params.id);
+  const data = await service.getUserById(req.params.id, req.user?.id);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
+const getProfileViewers = asyncHandler(async (req, res) => {
+  const data = await service.getProfileViewers(req.user.id);
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
@@ -45,4 +50,4 @@ const exportMyData = asyncHandler(async (req, res) => {
   res.send(JSON.stringify(data, null, 2));
 });
 
-module.exports = { onboardingStatus, getByTag, getById, getStats, getMyStats, getPrivacySettings, updatePrivacySettings, exportMyData };
+module.exports = { onboardingStatus, getByTag, getById, getStats, getMyStats, getProfileViewers, getPrivacySettings, updatePrivacySettings, exportMyData };
