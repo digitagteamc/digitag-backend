@@ -30,6 +30,15 @@ function errorHandler(err, req, res, _next) {
     return failure(res, { statusCode: STATUS.BAD_REQUEST, message: err.message });
   }
 
+  // Client disconnected before the request body finished uploading (app
+  // backgrounded, connection dropped, request cancelled mid-flight) — raw-body
+  // (underlying express.json()) throws this with type 'request.aborted'.
+  // Expected network behavior, not a bug: respond plainly and never send it
+  // to Sentry, or every flaky connection shows up as a false alarm.
+  if (err && err.type === 'request.aborted') {
+    return failure(res, { statusCode: STATUS.BAD_REQUEST, message: 'Request aborted' });
+  }
+
   if (err instanceof ApiError || (err && err.isOperational)) {
     return failure(res, {
       statusCode: err.statusCode || STATUS.BAD_REQUEST,
