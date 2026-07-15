@@ -22,11 +22,18 @@ const subscriptionRoutes = require('../modules/subscriptions/subscription.route'
 const subscriptionWebhookRoutes = require('../modules/subscriptions/subscription.webhook.route');
 const notificationRoutes = require('../modules/notifications/notification.route');
 const waitlistRoutes = require('../modules/waitlist/waitlist.route');
+const env = require('../config/env');
 
 const router = Router();
 
 router.get('/health', (_req, res) => {
   res.json({ success: true, service: 'digitag-api', time: new Date().toISOString() });
+});
+
+// Remote flags the app reads on launch — a fast, no-deploy way to show/hide
+// whole feature surfaces (currently just Premium) without an app-store build.
+router.get('/config', (_req, res) => {
+  res.json({ success: true, data: { premiumEnabled: env.PREMIUM_ENABLED } });
 });
 
 router.use('/auth', authRoutes);

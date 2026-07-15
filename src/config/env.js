@@ -105,6 +105,12 @@ const env = {
     planId: optional('RAZORPAY_PLAN_ID'),
     webhookSecret: optional('RAZORPAY_WEBHOOK_SECRET'),
   },
+
+  // Remote kill switch for the whole Premium surface (Upgrade button, Who
+  // Viewed My Profile, Boost) — the app reads this from GET /config on
+  // launch, so toggling it is just an env change + restart here, never an
+  // app-store build. Defaults OFF; flip to 'true' when ready to launch.
+  PREMIUM_ENABLED: optional('PREMIUM_ENABLED') === 'true',
 };
 
 env.isProduction = env.NODE_ENV === 'production';
