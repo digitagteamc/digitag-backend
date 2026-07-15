@@ -165,7 +165,8 @@ async function createPost(user, data) {
     try {
       const collabs = await prisma.collaboration.findMany({
         where: {
-          status: 'ACCEPTED',
+          // COMPLETED partners stay connected — same rule as messaging.
+          status: { in: ['ACCEPTED', 'COMPLETED'] },
           OR: [{ senderId: user.id }, { receiverId: user.id }],
         },
         select: {
