@@ -89,7 +89,14 @@ async function verifyPurchase(userId, transactionId) {
   try {
     info = await apiClient().getTransactionInfo(transactionId);
   } catch (err) {
-    logger.error('[apple iap] getTransactionInfo failed', { err: err.message });
+    // APIException's useful detail lives in errorMessage/httpStatusCode, not
+    // .message (which is empty) — log those or every real failure shows up
+    // as an unhelpful blank string.
+    logger.error('[apple iap] getTransactionInfo failed', {
+      httpStatusCode: err.httpStatusCode,
+      errorMessage: err.errorMessage,
+      errorCode: err.errorCode,
+    });
     throw ApiError.badRequest('Could not verify this purchase with Apple');
   }
 
