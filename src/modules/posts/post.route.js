@@ -58,5 +58,11 @@ router.get('/:id', optionalAuth, validateRequest({ params: idParam }), controlle
 router.post('/:id/save', authenticate, validateRequest({ params: idParam }), controller.save);
 router.delete('/:id/save', authenticate, validateRequest({ params: idParam }), controller.unsave);
 router.post('/:id/boost', authenticate, validateRequest({ params: idParam }), controller.boost);
+router.patch(
+  '/:id/status',
+  authenticate,
+  validateRequest({ params: idParam, body: schemas.updateStatusSchema }),
+  controller.updateStatus,
+);
 
 module.exports = router;

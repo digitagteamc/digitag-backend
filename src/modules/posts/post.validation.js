@@ -29,6 +29,10 @@ const updatePostSchema = Joi.object({
   boostHours: Joi.number().valid(...BOOST_HOURS).allow(null).optional(),
 }).min(1);
 
+const updateStatusSchema = Joi.object({
+  status: Joi.string().valid('OPEN', 'COMPLETED', 'CLOSED').required(),
+});
+
 const listQuery = pagination.keys({
   collaborationType: Joi.string().valid(...COLLAB_TYPES).optional(),
   location: Joi.string().trim().max(120).optional(),
@@ -38,6 +42,7 @@ const listQuery = pagination.keys({
 module.exports = {
   createPostSchema,
   updatePostSchema,
+  updateStatusSchema,
   listQuery,
   idParam,
 };

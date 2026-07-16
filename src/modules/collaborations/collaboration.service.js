@@ -99,6 +99,11 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
     if (post.userId !== receiverId) {
       throw ApiError.badRequest('Post does not belong to the specified recipient');
     }
+    // Owner-driven lifecycle: once marked COMPLETED (or CLOSED), the post
+    // stops accepting new requests from anyone, not just whoever already
+    // collaborated on it.
+    if (post.status === 'COMPLETED') throw ApiError.conflict('This collaboration opportunity has already been filled');
+    if (post.status === 'CLOSED') throw ApiError.notFound('Post not found');
   }
 
   // Prevent duplicate PENDING requests for the same (sender, receiver, post).

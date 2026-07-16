@@ -76,4 +76,9 @@ const boostQuota = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
-module.exports = { create, update, remove, getById, myPosts, userPosts, save, unsave, savedPosts, savedPostIds, boost, boostQuota };
+const updateStatus = asyncHandler(async (req, res) => {
+  const data = await service.updatePostStatus(req.user, req.params.id, req.body.status);
+  return success(res, { message: 'Post status updated', data });
+});
+
+module.exports = { create, update, remove, getById, myPosts, userPosts, save, unsave, savedPosts, savedPostIds, boost, boostQuota, updateStatus };

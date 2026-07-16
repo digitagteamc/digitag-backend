@@ -60,6 +60,7 @@ async function getFeed(user, query = {}) {
 
   const where = {
     isActive: true,
+    status: { not: 'CLOSED' },
     role: { in: targetRoles },
     ...notExpiredWhere(),
   };

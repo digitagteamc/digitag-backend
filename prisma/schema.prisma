@@ -34,6 +34,12 @@ enum CollaborationType {
   UNPAID
 }
 
+enum PostStatus {
+  OPEN
+  COMPLETED
+  CLOSED
+}
+
 enum OtpPurpose {
   LOGIN
   VERIFICATION
@@ -282,6 +288,12 @@ model Post {
   budget            String?
   isActive          Boolean           @default(true)
   isHidden          Boolean           @default(false)
+  // Owner-driven lifecycle, separate from isActive (delete) and isHidden
+  // (admin moderation): COMPLETED keeps the post visible as a record but
+  // blocks new collaboration requests from anyone; CLOSED hides it from
+  // feeds like a delete, but — unlike isActive — is meant to be reversible
+  // by the owner reopening it.
+  status            PostStatus        @default(OPEN)
   // Optional visibility window — null means the post stays live forever. When
   // set (from the creator's chosen "Post Visibility" duration at create time),
   // the post stops being shown to other users once this passes, but the

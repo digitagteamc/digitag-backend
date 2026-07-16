@@ -264,6 +264,27 @@ async function boostPost(user, id) {
   return shapePost(post, await resolveCategoryMap([post]));
 }
 
+const POST_STATUS_VALUES = ['OPEN', 'COMPLETED', 'CLOSED'];
+
+/** Owner-driven lifecycle control. COMPLETED keeps the post visible as a
+ *  record but blocks new collaboration requests from anyone; CLOSED hides it
+ *  from feeds like a delete, but — unlike isActive — the owner can reopen it
+ *  by setting status back to OPEN. */
+async function updatePostStatus(user, id, status) {
+  if (!POST_STATUS_VALUES.includes(status)) throw ApiError.badRequest('Invalid post status');
+  const existing = await prisma.post.findUnique({ where: { id } });
+  if (!existing || !existing.isActive) throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
+  if (existing.userId !== user.id) throw ApiError.forbidden(MESSAGES.POST.NOT_OWNER);
+
+  const post = await prisma.post.update({
+    where: { id },
+    data: { status },
+    include: buildPostInclude(),
+  });
+  await invalidateAllFeeds();
+  return shapePost(post, await resolveCategoryMap([post]));
+}
+
 async function deletePost(user, id) {
   const existing = await prisma.post.findUnique({ where: { id } });
   if (!existing || !existing.isActive) throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
@@ -287,9 +308,12 @@ async function getPostById(id, viewerId) {
     include: buildPostInclude(),
   });
   if (!post) throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
-  // A boosted post that's expired is invisible to everyone except its owner.
+  // A boosted post that's expired, or one the owner closed, is invisible to
+  // everyone except its owner.
   const isExpired = post.expiresAt && post.expiresAt <= new Date();
-  if (isExpired && post.userId !== viewerId) throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
+  if ((isExpired || post.status === 'CLOSED') && post.userId !== viewerId) {
+    throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
+  }
   return shapePost(post, await resolveCategoryMap([post]));
 }
 
@@ -302,9 +326,13 @@ async function listUserPosts(userId, query = {}, viewerId) {
 
   const where = { userId, isActive: true };
   if (query.collaborationType) where.collaborationType = query.collaborationType;
-  // Owners see all of their own posts (including expired boosts); anyone else
-  // browsing someone's posts only sees the ones still live.
-  if (viewerId !== userId) Object.assign(where, notExpiredWhere());
+  // Owners see all of their own posts (including expired boosts and closed
+  // ones); anyone else browsing someone's posts only sees the ones still
+  // live and not closed.
+  if (viewerId !== userId) {
+    Object.assign(where, notExpiredWhere());
+    where.status = { not: 'CLOSED' };
+  }
 
   const [items, total] = await Promise.all([
     prisma.post.findMany({
