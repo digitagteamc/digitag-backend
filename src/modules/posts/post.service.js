@@ -410,4 +410,5 @@ module.exports = {
   shapePost,
   resolveCategoryMap,
   notExpiredWhere,
+  updatePostStatus,
 };
