@@ -6,6 +6,24 @@ const { assertNotBlocked } = require('../blocks/block.service');
 
 const CONVERSATIONS_TTL = 30; // seconds
 
+/** A pair can have multiple simultaneous collaborations (one per post) —
+ *  completing one must not lock messaging/calls while another between the
+ *  same two people is still ACCEPTED. Checked in bulk (not per-conversation)
+ *  since a Conversation only points at whichever single collab it was last
+ *  pointed at. */
+async function hasActiveCollaboration(userIdA, userIdB) {
+  const count = await prisma.collaboration.count({
+    where: {
+      status: 'ACCEPTED',
+      OR: [
+        { senderId: userIdA, receiverId: userIdB },
+        { senderId: userIdB, receiverId: userIdA },
+      ],
+    },
+  });
+  return count > 0;
+}
+
 const userInclude = {
   select: {
     id: true,
@@ -116,12 +134,23 @@ async function getConversationById(userId, id) {
     throw ApiError.forbidden('Not a participant in this conversation');
   }
   const other = c.participantAId === userId ? c.participantB : c.participantA;
+
+  // Same multi-collaboration rule as sendMessage: don't report the chat as
+  // locked just because the specific collab this conversation points at was
+  // completed, if another collaboration between the same two people is still
+  // ACCEPTED elsewhere.
+  let collabStatus = c.collaboration?.status || null;
+  if (collabStatus && collabStatus !== 'ACCEPTED') {
+    const stillActive = await hasActiveCollaboration(c.participantAId, c.participantBId);
+    if (stillActive) collabStatus = 'ACCEPTED';
+  }
+
   return {
     id: c.id,
     collaborationId: c.collaborationId,
     // Lets the chat screen lock the composer (e.g. COMPLETED = read-only chat)
     // instead of the user discovering it via a failed send.
-    collabStatus: c.collaboration?.status || null,
+    collabStatus,
     lastMessageAt: c.lastMessageAt,
     createdAt: c.createdAt,
     other: shapeParticipant(other),
@@ -205,13 +234,19 @@ async function sendMessage(userId, conversationId, content, imageUrl = null, rep
   // Product rule: chat is open only while the collaboration is ACCEPTED.
   // Completing it closes messaging (and calls) — history stays readable, and
   // a fresh collab between the same pair re-opens the chat because accepting
-  // re-points the conversation at the new collaboration.
+  // re-points the conversation at the new collaboration. But a pair can have
+  // several simultaneous collaborations (one per post) — only actually lock
+  // if none of them are still ACCEPTED, not just because the one this
+  // conversation happens to point at was completed.
   if (conv.collaboration && conv.collaboration.status !== 'ACCEPTED') {
-    throw ApiError.forbidden(
-      conv.collaboration.status === 'COMPLETED'
-        ? 'This collaboration is completed — messaging is closed'
-        : 'Messaging is unlocked only after the collaboration is accepted',
-    );
+    const stillActive = await hasActiveCollaboration(conv.participantAId, conv.participantBId);
+    if (!stillActive) {
+      throw ApiError.forbidden(
+        conv.collaboration.status === 'COMPLETED'
+          ? 'This collaboration is completed — messaging is closed'
+          : 'Messaging is unlocked only after the collaboration is accepted',
+      );
+    }
   }
 
   const recipientId = conv.participantAId === userId ? conv.participantBId : conv.participantAId;
