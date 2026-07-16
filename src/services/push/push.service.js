@@ -86,6 +86,61 @@ async function sendToUser(userId, buildMessage, { respectNotificationSetting = t
   );
 }
 
+// FCM's multicast API caps at 500 tokens per call.
+const MULTICAST_CHUNK_SIZE = 500;
+
+/** Send one notification to many users at once — for high-fanout cases (e.g.
+ *  "new post in your category") where a sendToUser-per-user loop would mean
+ *  one FCM network call per recipient. Uses sendEachForMulticast (up to 500
+ *  tokens per call) instead, so 5000 recipients is ~10 calls, not 5000.
+ *  `buildMessage` is called once (its `token` field is discarded — multicast
+ *  takes a `tokens` array instead) so it can reuse the same builders
+ *  (notificationMessage etc.) as sendToUser. Every recipient's preferences
+ *  (pushNotificationsEnabled, and whatever else the caller already filtered
+ *  by) must be checked by the caller before building the userIds list —
+ *  unlike sendToUser, this doesn't check per-user settings itself since
+ *  doing so per-user would defeat the point of batching. */
+async function sendBroadcast(userIds, buildMessage) {
+  if (!userIds.length) return;
+
+  const { token: _ignored, ...messageBody } = buildMessage('_multicast_probe_');
+  if (messageBody.notification) {
+    await prisma.notification.createMany({
+      data: userIds.map((userId) => ({
+        userId,
+        type: messageBody.data?.type || 'GENERIC',
+        title: messageBody.notification.title,
+        body: messageBody.notification.body,
+        data: messageBody.data || {},
+      })),
+    }).catch((err) => logger.error('[Notification] batch persist failed', { err: err.message }));
+  }
+
+  const [devices, users] = await Promise.all([
+    prisma.fcmDevice.findMany({ where: { userId: { in: userIds } }, select: { token: true } }),
+    prisma.user.findMany({ where: { id: { in: userIds } }, select: { fcmToken: true } }),
+  ]);
+  const tokens = [...new Set([
+    ...devices.map((d) => d.token),
+    ...users.map((u) => u.fcmToken).filter(Boolean),
+  ])];
+  if (!tokens.length) return;
+
+  for (let i = 0; i < tokens.length; i += MULTICAST_CHUNK_SIZE) {
+    const batch = tokens.slice(i, i + MULTICAST_CHUNK_SIZE);
+    try {
+      const res = await admin.messaging().sendEachForMulticast({ tokens: batch, ...messageBody });
+      const deadTokens = batch.filter((_, idx) => {
+        const r = res.responses[idx];
+        return !r.success && DEAD_TOKEN_CODES.has(r.error?.code);
+      });
+      if (deadTokens.length) await Promise.all(deadTokens.map(pruneDeadToken));
+    } catch (err) {
+      logger.error('[FCM] broadcast send failed', { err: err.message });
+    }
+  }
+}
+
 /** Data-only push (Android headless handler) with an APNs alert override so
  *  iOS — which won't reliably deliver data-only messages in the background —
  *  still shows a visible, sounding notification. Used for incoming calls. */
@@ -158,6 +213,7 @@ async function unregisterDevice(userId, token) {
 
 module.exports = {
   sendToUser,
+  sendBroadcast,
   callAlertMessage,
   dataMessage,
   notificationMessage,

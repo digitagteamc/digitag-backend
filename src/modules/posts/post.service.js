@@ -194,6 +194,55 @@ async function createPost(user, data) {
           );
         }),
       );
+
+      // Discovery notification: a Creator's post reaches Freelancers whose
+      // profile categories match this post's category — not the other
+      // direction, and never a blanket broadcast to the whole app. Uses a
+      // batched multicast (sendBroadcast) rather than one push per matching
+      // freelancer, since a popular category could mean thousands of
+      // recipients.
+      if (user.role === ROLES.CREATOR && data.category) {
+        const category = await prisma.category.findFirst({
+          where: {
+            name: { equals: data.category, mode: 'insensitive' },
+            isActive: true,
+            applicableRoles: { has: 'FREELANCER' },
+          },
+          select: { id: true, name: true },
+        });
+        if (category) {
+          const matches = await prisma.freelancerProfile.findMany({
+            where: {
+              categories: { has: category.id },
+              user: { notifyCategoryPosts: true, pushNotificationsEnabled: true },
+            },
+            select: { userId: true },
+          });
+          const categoryUserIds = matches
+            .map((m) => m.userId)
+            .filter((id) => !otherIds.has(id)); // already notified as a collaborator above
+          if (categoryUserIds.length) {
+            // One bulk query instead of a per-recipient isBlockedBetween call
+            // — the whole point of sendBroadcast is avoiding per-user
+            // round-trips at scale, so exclusion has to batch the same way.
+            const blocks = await prisma.block.findMany({
+              where: { OR: [{ blockerId: user.id }, { blockedId: user.id }] },
+              select: { blockerId: true, blockedId: true },
+            });
+            const blockedIds = new Set(
+              blocks.map((b) => (b.blockerId === user.id ? b.blockedId : b.blockerId)),
+            );
+            const notBlocked = categoryUserIds.filter((id) => !blockedIds.has(id));
+            await push.sendBroadcast(notBlocked, (t) =>
+              push.notificationMessage(
+                t,
+                { type: 'NEW_POST', postId: post.id },
+                { title: `New ${category.name} post from ${posterName}`, body: preview },
+              ),
+            );
+          }
+        }
+      }
     } catch (err) {
       logger.error('[FCM] post notification failed', { err: err.message });
     }

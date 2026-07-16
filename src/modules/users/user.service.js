@@ -168,6 +168,7 @@ const PRIVACY_FIELDS = {
   showOnlineStatus: true,
   shareDataForPersonalization: true,
   pushNotificationsEnabled: true,
+  notifyCategoryPosts: true,
   preferredLanguage: true,
 };
 

@@ -141,6 +141,10 @@ model User {
   showOnlineStatus             Boolean  @default(true) // hide lastActiveAt from chat partners when off
   shareDataForPersonalization  Boolean  @default(true) // stored preference; not yet read by any analytics/personalization system
   pushNotificationsEnabled     Boolean  @default(true) // gates non-call pushes; incoming calls always ring
+  // Freelancers only: "a Creator posted in one of my categories" — separate
+  // from pushNotificationsEnabled since this is much higher-volume than
+  // collab-based notifications and needs its own off switch.
+  notifyCategoryPosts          Boolean  @default(true)
   preferredLanguage            String   @default("English") // stored preference; UI copy itself is English-only today
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt

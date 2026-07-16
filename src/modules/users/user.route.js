@@ -14,6 +14,7 @@ const privacySettingsBody = Joi.object({
   showOnlineStatus: Joi.boolean().optional(),
   shareDataForPersonalization: Joi.boolean().optional(),
   pushNotificationsEnabled: Joi.boolean().optional(),
+  notifyCategoryPosts: Joi.boolean().optional(),
   preferredLanguage: Joi.string().trim().min(1).max(30).optional(),
 }).min(1);
 
