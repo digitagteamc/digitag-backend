@@ -266,18 +266,22 @@ async function cancelCollaboration(userId, collabId) {
 }
 
 /**
- * Most-recent collab between me and another user (either direction). Used by
- * the profile screen to pick the right CollabAction state.
+ * Collab between me and another user (either direction). Used by the profile
+ * screen to pick the right CollabAction state — most-recent collab overall
+ * when no postId is given (a profile isn't tied to one specific post).
+ *
+ * When postId IS given (post-detail screen), scope strictly to that post:
+ * a freelancer with 3 posts must show each post's own collaboration status
+ * independently, not whichever collab with that user happens to be newest.
  */
-async function getCollaborationWith(userId, otherUserId) {
+async function getCollaborationWith(userId, otherUserId, postId = null) {
   if (userId === otherUserId) return null;
+  const pairOr = [
+    { senderId: userId, receiverId: otherUserId },
+    { senderId: otherUserId, receiverId: userId },
+  ];
   const collab = await prisma.collaboration.findFirst({
-    where: {
-      OR: [
-        { senderId: userId, receiverId: otherUserId },
-        { senderId: otherUserId, receiverId: userId },
-      ],
-    },
+    where: postId ? { postId, OR: pairOr } : { OR: pairOr },
     orderBy: { updatedAt: 'desc' },
     include: { sender: userInclude, receiver: userInclude, post: postInclude },
   });

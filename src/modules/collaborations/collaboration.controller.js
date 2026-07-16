@@ -24,7 +24,7 @@ const cancel = asyncHandler(async (req, res) => {
 });
 
 const withUser = asyncHandler(async (req, res) => {
-  const data = await service.getCollaborationWith(req.user.id, req.params.userId);
+  const data = await service.getCollaborationWith(req.user.id, req.params.userId, req.query.postId || null);
   return success(res, { message: 'Fetched successfully', data });
 });
 
