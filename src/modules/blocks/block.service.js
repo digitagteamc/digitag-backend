@@ -70,6 +70,9 @@ async function block(blockerId, blockedId) {
 
   // Blocked user's posts must disappear from the blocker's feed instantly.
   await cache.delPattern(`feed:${blockerId}:*`);
+  // Online/last-seen presence must stop being visible between the pair
+  // immediately too, in both directions' cached conversation lists.
+  await Promise.all([cache.del(`conversations:${blockerId}`), cache.del(`conversations:${blockedId}`)]);
 
   return { blocked: true };
 }
@@ -77,6 +80,7 @@ async function block(blockerId, blockedId) {
 async function unblock(blockerId, blockedId) {
   await prisma.block.deleteMany({ where: { blockerId, blockedId } });
   await cache.delPattern(`feed:${blockerId}:*`);
+  await Promise.all([cache.del(`conversations:${blockerId}`), cache.del(`conversations:${blockedId}`)]);
   return { unblocked: true };
 }
 

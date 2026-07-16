@@ -2,7 +2,7 @@ const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const cache = require('../../services/cache/cache.service');
 const push = require('../../services/push/push.service');
-const { assertNotBlocked } = require('../blocks/block.service');
+const { assertNotBlocked, isBlockedBetween } = require('../blocks/block.service');
 
 const CONVERSATIONS_TTL = 30; // seconds
 
@@ -46,7 +46,7 @@ function orderedPair(userIdA, userIdB) {
     : { participantAId: userIdB, participantBId: userIdA };
 }
 
-function shapeParticipant(user) {
+function shapeParticipant(user, isBlockedPair = false) {
   if (!user) return null;
   // A deleted account keeps its rows for the admin panel, but the app must
   // never surface its old identity — the other party just sees a tombstone.
@@ -64,8 +64,10 @@ function shapeParticipant(user) {
   }
   const profile = user.creatorProfile || user.freelancerProfile;
   // Privacy Settings > Show Online Status: when off, hide the timestamps the
-  // chat UI uses to render "online"/"last seen" for this person.
-  const hideActivity = user.showOnlineStatus === false;
+  // chat UI uses to render "online"/"last seen" for this person. Same for a
+  // blocked pair (either direction) regardless of that setting — blocking
+  // someone shouldn't leave your presence visible to them, or theirs to you.
+  const hideActivity = user.showOnlineStatus === false || isBlockedPair;
   return {
     id: user.id,
     role: user.role,
@@ -107,6 +109,14 @@ async function listConversations(userId) {
 
   const unreadMap = new Map(unreadGroups.map((g) => [g.conversationId, g._count.id]));
 
+  // One bulk query instead of an isBlockedBetween call per conversation —
+  // hides online/last-seen presence from (and of) anyone blocked either way.
+  const blocks = await prisma.block.findMany({
+    where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+    select: { blockerId: true, blockedId: true },
+  });
+  const blockedIds = new Set(blocks.map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId)));
+
   const result = rows.map((c) => {
     const other = c.participantAId === userId ? c.participantB : c.participantA;
     return {
@@ -114,7 +124,7 @@ async function listConversations(userId) {
       collaborationId: c.collaborationId,
       lastMessageAt: c.lastMessageAt,
       createdAt: c.createdAt,
-      other: shapeParticipant(other),
+      other: shapeParticipant(other, blockedIds.has(other?.id)),
       lastMessage: c.messages[0] || null,
       unreadCount: unreadMap.get(c.id) || 0,
     };
@@ -145,6 +155,8 @@ async function getConversationById(userId, id) {
     if (stillActive) collabStatus = 'ACCEPTED';
   }
 
+  const isBlockedPair = other ? await isBlockedBetween(userId, other.id) : false;
+
   return {
     id: c.id,
     collaborationId: c.collaborationId,
@@ -153,7 +165,7 @@ async function getConversationById(userId, id) {
     collabStatus,
     lastMessageAt: c.lastMessageAt,
     createdAt: c.createdAt,
-    other: shapeParticipant(other),
+    other: shapeParticipant(other, isBlockedPair),
   };
 }
 
