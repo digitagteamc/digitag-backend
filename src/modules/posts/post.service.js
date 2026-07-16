@@ -174,13 +174,18 @@ async function createPost(user, data) {
           receiver: { select: { id: true } },
         },
       });
+      // Two users can accumulate multiple accepted/completed collaboration
+      // rows over time (one per past post they worked on together) — dedupe
+      // to one notification per person, not one per collaboration row.
+      const otherIds = new Set(
+        collabs.map((c) => (c.sender.id === user.id ? c.receiver.id : c.sender.id)),
+      );
       await Promise.all(
-        collabs.map(async (c) => {
-          const other = c.sender.id === user.id ? c.receiver : c.sender;
+        Array.from(otherIds).map(async (otherId) => {
           // A collaboration surviving a block (blocking doesn't cancel it) must
           // not keep pushing "new post" notifications from someone you blocked.
-          if (await isBlockedBetween(user.id, other.id)) return;
-          return push.sendToUser(other.id, (t) =>
+          if (await isBlockedBetween(user.id, otherId)) return;
+          return push.sendToUser(otherId, (t) =>
             push.notificationMessage(
               t,
               { type: 'NEW_POST', postId: post.id },
