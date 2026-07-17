@@ -14,8 +14,23 @@ async function attachUploadedImage(req) {
   req.body.imageUrl = url;
 }
 
+// Create uses .array('images', 3) — up to 3 work-sample images for
+// portfolio-category posts, everything else still just sends one.
+async function attachUploadedImages(req) {
+  if (!req.files || !req.files.length) return;
+  const uploaded = await Promise.all(
+    req.files.map((f) => uploadService.handleImageUpload(f, { prefix: `posts/${req.user.id}` })),
+  );
+  req.body.imageUrls = uploaded.map((u) => u.url);
+  req.body.imageKeys = uploaded.map((u) => u.key);
+  // Legacy singular fields mirror the first image, for any consumer still
+  // reading them directly.
+  req.body.imageUrl = uploaded[0].url;
+  req.body.imageKey = uploaded[0].key;
+}
+
 const create = asyncHandler(async (req, res) => {
-  await attachUploadedImage(req);
+  await attachUploadedImages(req);
   const data = await service.createPost(req.user, req.body);
   return success(res, { statusCode: STATUS.CREATED, message: MESSAGES.POST.CREATED, data });
 });

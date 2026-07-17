@@ -14,7 +14,9 @@ const imageUploader = uploadImage({ prefix: 'posts' });
 router.post(
   '/',
   authenticate,
-  imageUploader.single('image'),
+  // Portfolio-category posts can carry up to 3 work-sample images; every
+  // other post still only ever sends one, which lands in files[0].
+  imageUploader.array('images', 3),
   validateRequest({ body: schemas.createPostSchema }),
   controller.create,
 );

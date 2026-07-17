@@ -150,6 +150,8 @@ async function createPost(user, data) {
       budget: data.budget || null,
       imageUrl: data.imageUrl || null,
       imageKey: data.imageKey || null,
+      imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : [],
+      imageKeys: Array.isArray(data.imageKeys) ? data.imageKeys : [],
       expiresAt: boostHoursToExpiresAt(data.boostHours),
     },
     include: buildPostInclude(),
@@ -344,9 +346,10 @@ async function deletePost(user, id) {
     data: { isActive: false },
   });
 
-  if (existing.imageKey) {
-    await s3UploadService.deleteObject(existing.imageKey);
-  }
+  // imageKeys covers multi-image portfolio posts; imageKey is only checked
+  // as a fallback for older rows that predate the array field.
+  const keysToDelete = existing.imageKeys?.length ? existing.imageKeys : (existing.imageKey ? [existing.imageKey] : []);
+  await Promise.all(keysToDelete.map((key) => s3UploadService.deleteObject(key)));
 
   await invalidateAllFeeds();
 }

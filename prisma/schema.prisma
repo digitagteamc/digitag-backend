@@ -284,8 +284,15 @@ model Post {
   userId            String
   role              UserRole
   description       String
+  // Legacy single-image fields — kept in sync with imageUrls[0]/imageKeys[0]
+  // for any consumer still reading the singular field.
   imageUrl          String?
   imageKey          String?
+  // Portfolio-category posts (Photography, Property Rental, Fashion
+  // Designers, Models, Styling & Makeup) can carry up to 3 work-sample
+  // images — everything else still only ever populates the first slot.
+  imageUrls         String[]          @default([])
+  imageKeys         String[]          @default([])
   location          String?
   collaborationType CollaborationType @default(UNPAID)
   category          String?
