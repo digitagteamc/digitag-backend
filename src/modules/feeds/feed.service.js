@@ -106,7 +106,24 @@ async function getFeed(user, query = {}) {
 
   if (query.collaborationType) where.collaborationType = query.collaborationType;
   if (query.location) where.location = { contains: query.location, mode: 'insensitive' };
-  if (query.search) where.description = { contains: query.search, mode: 'insensitive' };
+  // Keyword search matches whatever text a post actually carries — description,
+  // category label, and location — not just the description, so a query like
+  // "Mumbai" or "Photography" surfaces relevant posts too. Added as its own
+  // where.AND entry (not where.OR) since where.OR is already claimed by
+  // notExpiredWhere() above — overwriting it would silently let expired
+  // boosted posts back into results whenever a search term is present.
+  if (query.search) {
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          { description: { contains: query.search, mode: 'insensitive' } },
+          { category: { contains: query.search, mode: 'insensitive' } },
+          { location: { contains: query.search, mode: 'insensitive' } },
+        ],
+      },
+    ];
+  }
 
   // Explicit category filter from query takes precedence
   if (query.categoryId) {

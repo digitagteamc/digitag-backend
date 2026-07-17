@@ -1,6 +1,13 @@
 const { prisma } = require('../../config/db');
 const { OPPOSITE_FEED_ROLE, ROLES } = require('../../constants/roles');
 const { resolveCategoryMap } = require('../categories/category.service');
+// Lazy require: feed.service.js requires post.service.js, and both live outside
+// this module's own dependency chain, but requiring it at call time (rather than
+// module load time) keeps this file safe if that chain ever grows a cycle back
+// through search — same defensive pattern post.service.js uses for feed.service.js.
+function getFeed(...args) {
+  return require('../feeds/feed.service').getFeed(...args);
+}
 
 async function searchProfiles(user, q, limit = 20) {
     const query = q.trim();
@@ -73,4 +80,17 @@ async function searchProfiles(user, q, limit = 20) {
     return results.slice(0, limit);
 }
 
-module.exports = { searchProfiles };
+// Combined search: accounts (via searchProfiles) and posts (via the same
+// getFeed a logged-in user's Explore tab uses), so post results respect the
+// exact same visibility rules — opposite-role targeting, blocks, hidden
+// freelancer categories, active/expiry/CLOSED status — as browsing does.
+async function search(user, q, limit = 20) {
+    const query = q.trim();
+    const [users, feedResult] = await Promise.all([
+        searchProfiles(user, query, limit),
+        getFeed(user, { search: query, limit, page: 1 }),
+    ]);
+    return { users, posts: feedResult.items };
+}
+
+module.exports = { searchProfiles, search };
