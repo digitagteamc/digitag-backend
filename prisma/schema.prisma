@@ -254,6 +254,9 @@ model FreelancerProfile {
   portfolioUrl      String?
   availability      FreelancerAvailability @default(AVAILABLE)
   servicesOffered   String?
+  // Social Media Manager-only: independent checkboxes, not a single choice —
+  // a freelancer can offer both. Empty for every other category.
+  workTypes         String[]               @default([])
   // Social media presence
   instagramHandle      String?
   instagramFollowers   Int?

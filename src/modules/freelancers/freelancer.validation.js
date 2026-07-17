@@ -22,6 +22,9 @@ const baseFreelancerFields = {
   portfolioUrl: Joi.string().trim().max(255).allow('', null).optional(),
   availability: Joi.string().valid(...AVAILABILITIES).optional(),
   servicesOffered: Joi.string().trim().max(500).allow('', null).optional(),
+  // Social Media Manager-only checkboxes — harmless if sent for any other
+  // category, the mobile app just never shows them outside that one.
+  workTypes: Joi.array().items(Joi.string().valid('PART_TIME', 'FULL_TIME')).max(2).optional(),
   // Social presence
   instagramHandle: Joi.string().trim().max(100).allow('', null).optional(),
   instagramFollowers: Joi.number().integer().min(0).allow(null).optional(),
