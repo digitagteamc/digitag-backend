@@ -331,30 +331,71 @@ async function editMessage(userId, conversationId, messageId, content) {
 
 /** Toggle the caller's reaction to a message — either participant may react,
  * not just the sender, so this checks conversation membership rather than
- * senderId the way edit/delete do. */
+ * senderId the way edit/delete do. Reacting is still "using" the chat, so it
+ * must be blocked by the exact same rules as sending a new message (a block,
+ * or a completed collaboration with no other still-ACCEPTED collab between
+ * the pair) — otherwise a blocked/completed pair could react to old messages
+ * even though they can no longer send new ones. */
 async function toggleReaction(userId, conversationId, messageId, emoji) {
   const msg = await prisma.message.findUnique({ where: { id: messageId } });
   if (!msg) throw ApiError.notFound('Message not found');
   if (msg.conversationId !== conversationId) throw ApiError.forbidden('Message not in this conversation');
 
-  const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    include: { collaboration: true },
+  });
   if (!conv || (conv.participantAId !== userId && conv.participantBId !== userId)) {
     throw ApiError.forbidden('Not a participant in this conversation');
   }
 
+  const otherUserId = conv.participantAId === userId ? conv.participantBId : conv.participantAId;
+
+  if (conv.collaboration && conv.collaboration.status !== 'ACCEPTED') {
+    const stillActive = await hasActiveCollaboration(conv.participantAId, conv.participantBId);
+    if (!stillActive) {
+      throw ApiError.forbidden(
+        conv.collaboration.status === 'COMPLETED'
+          ? 'This collaboration is completed — reacting is closed'
+          : 'Reactions are unlocked only after the collaboration is accepted',
+      );
+    }
+  }
+  await assertNotBlocked(userId, otherUserId);
+
   const reactions = { ...(msg.reactions || {}) };
   const users = new Set(reactions[emoji] || []);
+  const isAdding = !users.has(userId);
   if (users.has(userId)) users.delete(userId);
   else users.add(userId);
 
   if (users.size > 0) reactions[emoji] = [...users];
   else delete reactions[emoji];
 
-  return prisma.message.update({
+  const updated = await prisma.message.update({
     where: { id: messageId },
     data: { reactions },
     select: { id: true, reactions: true },
   });
+
+  // Only notify on adding a reaction, not removing one — same as nobody
+  // wants a push for someone un-reacting.
+  if (isAdding) {
+    const reactorUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { creatorProfile: { select: { name: true } }, freelancerProfile: { select: { name: true } } },
+    });
+    const reactorName = reactorUser?.creatorProfile?.name || reactorUser?.freelancerProfile?.name || 'Someone';
+    await push.sendToUser(otherUserId, (t) =>
+      push.notificationMessage(
+        t,
+        { type: 'MESSAGE_REACTION', conversationId, messageId },
+        { title: reactorName, body: `Reacted ${emoji} to your message` },
+      ),
+    );
+  }
+
+  return updated;
 }
 
 /** WhatsApp-style "delete for everyone" — keeps the row (so ordering/read-state stays
