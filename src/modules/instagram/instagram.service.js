@@ -72,6 +72,15 @@ async function startVerification(userId, instagramUrl) {
     throw ApiError.conflict('This Instagram account is already verified by another DigiTag user');
   }
 
+  // Already connected by this same user — nothing to re-verify.
+  const alreadyOwned = await prisma.instagramVerification.findFirst({
+    where: { userId, instagramUsername: username, status: 'VERIFIED' },
+    select: { id: true },
+  });
+  if (alreadyOwned) {
+    throw ApiError.conflict('You have already connected this Instagram account');
+  }
+
   const code = generateCode();
   const expiresAt = new Date(Date.now() + EXPIRY_MINUTES * 60 * 1000);
 
@@ -98,6 +107,21 @@ async function startVerification(userId, instagramUrl) {
     expiresAt: record.expiresAt,
     digiTagInstagram: env.DIGITAG_INSTAGRAM_USERNAME || 'digitag.official',
   };
+}
+
+async function listAccounts(userId) {
+  const accounts = await prisma.instagramVerification.findMany({
+    where: { userId, status: 'VERIFIED' },
+    select: { id: true, instagramUsername: true, followers: true, verifiedAt: true },
+    orderBy: { verifiedAt: 'asc' },
+  });
+  return accounts;
+}
+
+async function removeAccount(userId, id) {
+  const record = await prisma.instagramVerification.findFirst({ where: { id, userId, status: 'VERIFIED' } });
+  if (!record) throw ApiError.notFound('Connected Instagram account not found');
+  await prisma.instagramVerification.update({ where: { id }, data: { status: 'REMOVED' } });
 }
 
 async function getVerificationStatus(userId, id) {
@@ -149,16 +173,16 @@ async function handleWebhookMessage(senderIgScopedId, messageText) {
 
   console.log(`[Instagram] Code matched for @${record.instagramUsername} — marking VERIFIED`);
 
-  await prisma.instagramVerification.update({
-    where: { id: record.id },
-    data: { status: 'VERIFIED', verifiedAt: now },
-  });
-
   // Fetch sender profile (name, username, profile_pic) via IGSID — always works
   const senderProfile = await fetchSenderProfile(senderIgScopedId);
 
   // Fetch follower count via Business Discovery (needs INSTAGRAM_PAGE_TOKEN)
   const followerCount = await fetchFollowerCount(record.instagramUsername);
+
+  await prisma.instagramVerification.update({
+    where: { id: record.id },
+    data: { status: 'VERIFIED', verifiedAt: now, followers: followerCount },
+  });
 
   const user = await prisma.user.findUnique({
     where: { id: record.userId },
@@ -179,5 +203,7 @@ async function handleWebhookMessage(senderIgScopedId, messageText) {
 module.exports = {
   startVerification,
   getVerificationStatus,
+  listAccounts,
+  removeAccount,
   handleWebhookMessage,
 };

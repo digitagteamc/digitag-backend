@@ -66,6 +66,7 @@ enum InstagramVerificationStatus {
   VERIFIED
   EXPIRED
   FAILED
+  REMOVED
 }
 
 enum SocialPlatform {
@@ -572,6 +573,7 @@ model InstagramVerification {
   instagramUsername   String
   verificationCode    String
   status              InstagramVerificationStatus @default(PENDING)
+  followers           Int?
   expiresAt           DateTime
   verifiedAt          DateTime?
   createdAt           DateTime                   @default(now())

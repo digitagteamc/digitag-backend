@@ -22,6 +22,17 @@ router.get(
   controller.getStatus,
 );
 
+// Authenticated: list this user's connected (verified) Instagram accounts
+router.get('/accounts', authenticate, controller.listAccounts);
+
+// Authenticated: disconnect a connected Instagram account
+router.delete(
+  '/accounts/:id',
+  authenticate,
+  validateRequest({ params: idParam }),
+  controller.removeAccount,
+);
+
 // Public: Meta webhook challenge verification
 router.get('/webhook', controller.webhookVerify);
 

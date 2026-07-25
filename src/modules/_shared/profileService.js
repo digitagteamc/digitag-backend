@@ -5,6 +5,15 @@ const userService = require('../users/user.service');
 const { generateTagId } = require('../../utils/generateTagId');
 const { ensureUserTag } = require('../../utils/generateUserTag');
 
+async function attachInstagramAccounts(profile) {
+  const instagramAccounts = await prisma.instagramVerification.findMany({
+    where: { userId: profile.userId, status: 'VERIFIED' },
+    select: { id: true, instagramUsername: true, followers: true, verifiedAt: true },
+    orderBy: { verifiedAt: 'asc' },
+  });
+  return { ...profile, instagramAccounts };
+}
+
 /**
  * Factory that produces a role-specific profile service.
  * @param {Object} opts
@@ -94,7 +103,7 @@ function buildProfileService({ model, role }) {
       include: { category: { select: { id: true, name: true, slug: true } } },
     });
     if (!profile) throw ApiError.notFound(MESSAGES.PROFILE.NOT_FOUND);
-    return profile;
+    return attachInstagramAccounts(profile);
   }
 
   async function getProfileById(id) {
@@ -106,7 +115,7 @@ function buildProfileService({ model, role }) {
       },
     });
     if (!profile) throw ApiError.notFound(MESSAGES.PROFILE.NOT_FOUND);
-    return profile;
+    return attachInstagramAccounts(profile);
   }
 
   return { createProfile, updateProfile, getMyProfile, getProfileById };
