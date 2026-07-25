@@ -15,6 +15,16 @@ const getStatus = asyncHandler(async (req, res) => {
   return success(res, { message: 'Status fetched', data });
 });
 
+const listAccounts = asyncHandler(async (req, res) => {
+  const data = await service.listAccounts(req.user.id);
+  return success(res, { message: 'Accounts fetched', data });
+});
+
+const removeAccount = asyncHandler(async (req, res) => {
+  await service.removeAccount(req.user.id, req.params.id);
+  return success(res, { message: 'Account removed' });
+});
+
 // Meta webhook challenge-response (GET)
 const webhookVerify = (req, res) => {
   const mode = req.query['hub.mode'];
@@ -44,4 +54,4 @@ const webhookReceive = asyncHandler(async (req, res) => {
   }
 });
 
-module.exports = { startVerification, getStatus, webhookVerify, webhookReceive };
+module.exports = { startVerification, getStatus, listAccounts, removeAccount, webhookVerify, webhookReceive };

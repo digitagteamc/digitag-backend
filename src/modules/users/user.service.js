@@ -66,7 +66,7 @@ async function getProfileViewers(userId) {
 
 async function getUserById(id, viewerId) {
   logProfileView(viewerId, id);
-  const [user, followerCount, followingCount, collabCount] = await Promise.all([
+  const [user, followerCount, followingCount, collabCount, instagramAccounts] = await Promise.all([
     // This endpoint is publicly browsable (no auth required) — select only
     // profile-facing fields, never mobileNumber/fcmToken/status/etc.
     prisma.user.findUnique({
@@ -88,6 +88,11 @@ async function getUserById(id, viewerId) {
         status: 'ACCEPTED',
         OR: [{ senderId: id }, { receiverId: id }],
       },
+    }),
+    prisma.instagramVerification.findMany({
+      where: { userId: id, status: 'VERIFIED' },
+      select: { id: true, instagramUsername: true, followers: true, verifiedAt: true },
+      orderBy: { verifiedAt: 'asc' },
     }),
   ]);
   if (!user) throw ApiError.notFound('User not found');
@@ -111,6 +116,7 @@ async function getUserById(id, viewerId) {
     followerCount,
     followingCount,
     collabCount,
+    instagramAccounts,
   };
 }
 
