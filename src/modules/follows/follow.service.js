@@ -67,8 +67,8 @@ async function follow(followerId, followingId, followerRole) {
 }
 
 async function unfollow(followerId, followingId) {
-  await prisma.follow.deleteMany({ where: { followerId, followingId } });
-  return { unfollowed: true };
+  const result = await prisma.follow.deleteMany({ where: { followerId, followingId } });
+  return { unfollowed: result.count > 0 };
 }
 
 // viewerId is the person asking to see the list — omitted (or equal to userId)
