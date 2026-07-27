@@ -1119,21 +1119,57 @@ const BROADCAST_TARGETS = {
   creators: { role: 'CREATOR', status: 'ACTIVE' },
   freelancers: { role: 'FREELANCER', status: 'ACTIVE' },
   premium: { isPremium: true, status: 'ACTIVE' },
+  // Logged in (OTP verified) but never finished the signup form — the
+  // "complete your profile" nudge audience.
+  incomplete_profile: { status: 'ACTIVE', isProfileCompleted: false },
 };
 
-async function broadcastNotification(adminId, adminName, { title, body, target }) {
-  const where = BROADCAST_TARGETS[target];
+function buildBroadcastWhere(target, { categoryId, userIds } = {}) {
+  if (target === 'category') {
+    return {
+      status: 'ACTIVE',
+      OR: [
+        { creatorProfile: { categories: { has: categoryId } } },
+        { freelancerProfile: { categories: { has: categoryId } } },
+      ],
+    };
+  }
+  if (target === 'users') {
+    return { status: 'ACTIVE', id: { in: userIds } };
+  }
+  return BROADCAST_TARGETS[target];
+}
+
+async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds }) {
+  const where = buildBroadcastWhere(target, { categoryId, userIds });
   if (!where) throw ApiError.badRequest('Unknown target audience');
 
-  const [devices, legacyUsers] = await Promise.all([
+  const [matchedUsers, devices] = await Promise.all([
+    prisma.user.findMany({ where, select: { id: true, fcmToken: true } }),
     prisma.fcmDevice.findMany({ where: { user: where }, select: { token: true } }),
-    prisma.user.findMany({ where: { ...where, fcmToken: { not: null } }, select: { fcmToken: true } }),
   ]);
-  const tokens = [...new Set([...devices.map((d) => d.token), ...legacyUsers.map((u) => u.fcmToken)])];
+  const tokens = [...new Set([
+    ...devices.map((d) => d.token),
+    ...matchedUsers.filter((u) => u.fcmToken).map((u) => u.fcmToken),
+  ])];
+
+  // In-app notification center entry for every matched user, regardless of
+  // whether they have a push token — push can be missed (permission denied,
+  // app killed, dead token); this is the durable record they'll still see.
+  if (matchedUsers.length > 0) {
+    await prisma.notification.createMany({
+      data: matchedUsers.map((u) => ({
+        userId: u.id,
+        type: 'ANNOUNCEMENT',
+        title,
+        body,
+      })),
+    });
+  }
 
   if (tokens.length === 0) {
-    await logAdminAction(adminId, adminName, `Broadcast to ${target} (0 recipients)`, title);
-    return { ok: true, recipientCount: 0, sentCount: 0 };
+    await logAdminAction(adminId, adminName, `Broadcast to ${target} (${matchedUsers.length} recipients, 0 with push)`, title);
+    return { ok: true, recipientCount: matchedUsers.length, sentCount: 0 };
   }
 
   const admin = require('firebase-admin');
@@ -1167,8 +1203,8 @@ async function broadcastNotification(adminId, adminName, { title, body, target }
     await prisma.fcmDevice.deleteMany({ where: { token: { in: deadTokens } } }).catch(() => {});
   }
 
-  await logAdminAction(adminId, adminName, `Broadcast to ${target} (${tokens.length} recipients)`, title);
-  return { ok: true, recipientCount: tokens.length, sentCount };
+  await logAdminAction(adminId, adminName, `Broadcast to ${target} (${matchedUsers.length} recipients)`, title);
+  return { ok: true, recipientCount: matchedUsers.length, sentCount };
 }
 
 // ─── Activity Logs ────────────────────────────────────────────────────────────

@@ -29,7 +29,7 @@ async function initiateOtp({ mobileNumber, countryCode = '+91', role, categoryId
 
     if (user) {
         if (user.status === 'SUSPENDED' || user.status === 'DELETED') {
-            throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED);
+            throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
         }
         // NOTE: we intentionally no longer reject when the stored `role` differs
         // from the requested one. The role parameter is an intent for the
@@ -152,6 +152,10 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
         include: { creatorProfile: true, freelancerProfile: true },
     });
     let isNewUser = false;
+
+    if (user && (user.status === 'SUSPENDED' || user.status === 'DELETED')) {
+        throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
+    }
 
     if (!user) {
         user = await prisma.user.create({
