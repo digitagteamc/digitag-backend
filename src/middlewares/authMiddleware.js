@@ -37,7 +37,7 @@ async function authenticate(req, _res, next) {
 
     if (!user) throw ApiError.unauthorized(MESSAGES.AUTH.TOKEN_INVALID);
     if (user.status === 'SUSPENDED' || user.status === 'DELETED') {
-      throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED);
+      throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
     }
 
     // Presence heartbeat — throttled so normal app usage doesn't hammer the DB with

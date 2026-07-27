@@ -1,4 +1,5 @@
 const Joi = require('joi');
+const { uuid } = require('../../validations/common.validation');
 
 const login = Joi.object({
   email: Joi.string().email().required(),
@@ -116,7 +117,10 @@ const bulkUserIds = Joi.object({
 const broadcast = Joi.object({
   title: Joi.string().trim().min(1).max(100).required(),
   body: Joi.string().trim().min(1).max(500).required(),
-  target: Joi.string().valid('all', 'creators', 'freelancers', 'premium').required(),
+  target: Joi.string().valid('all', 'creators', 'freelancers', 'premium', 'incomplete_profile', 'category', 'users').required(),
+  categoryId: uuid.when('target', { is: 'category', then: Joi.required(), otherwise: Joi.forbidden() }),
+  userIds: Joi.array().items(uuid).min(1).max(500)
+    .when('target', { is: 'users', then: Joi.required(), otherwise: Joi.forbidden() }),
 });
 
 module.exports = {

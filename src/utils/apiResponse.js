@@ -16,8 +16,8 @@ class ApiError extends Error {
   static unauthorized(message = MESSAGES.GENERIC.UNAUTHORIZED) {
     return new ApiError(STATUS.UNAUTHORIZED, message);
   }
-  static forbidden(message = MESSAGES.GENERIC.FORBIDDEN) {
-    return new ApiError(STATUS.FORBIDDEN, message);
+  static forbidden(message = MESSAGES.GENERIC.FORBIDDEN, details = null) {
+    return new ApiError(STATUS.FORBIDDEN, message, details);
   }
   static notFound(message = MESSAGES.GENERIC.NOT_FOUND) {
     return new ApiError(STATUS.NOT_FOUND, message);
