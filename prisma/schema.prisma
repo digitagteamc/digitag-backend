@@ -593,6 +593,7 @@ model SocialVerification {
   status          SocialVerificationStatus  @default(PENDING)
   socialAccountId String?
   accountName     String?
+  failureReason   String?
   expiresAt       DateTime
   verifiedAt      DateTime?
   createdAt       DateTime                  @default(now())

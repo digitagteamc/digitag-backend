@@ -171,10 +171,19 @@ async function handleWebhookMessage(senderIgScopedId, messageText) {
     return;
   }
 
-  console.log(`[Instagram] Code matched for @${record.instagramUsername} — marking VERIFIED`);
-
-  // Fetch sender profile (name, username, profile_pic) via IGSID — always works
+  // The code alone isn't proof of ownership — anyone who sees it (screenshot,
+  // shared screen, guessed during the window) could DM it from an unrelated
+  // account. Confirm the DM actually came from the same Instagram account the
+  // user typed into the app before marking anything verified.
   const senderProfile = await fetchSenderProfile(senderIgScopedId);
+  const senderUsername = senderProfile?.username?.toLowerCase();
+  if (!senderUsername || senderUsername !== record.instagramUsername) {
+    console.log(`[Instagram] Code matched but sender @${senderUsername || 'unknown'} does not match entered username @${record.instagramUsername} — marking FAILED`);
+    await prisma.instagramVerification.update({ where: { id: record.id }, data: { status: 'FAILED' } });
+    return;
+  }
+
+  console.log(`[Instagram] Code matched for @${record.instagramUsername} — marking VERIFIED`);
 
   // Fetch follower count via Business Discovery (needs INSTAGRAM_PAGE_TOKEN)
   const followerCount = await fetchFollowerCount(record.instagramUsername);

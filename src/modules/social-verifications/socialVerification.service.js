@@ -116,8 +116,12 @@ async function complete(platform, query) {
     return { id, status: 'VERIFIED' };
   } catch (error) {
     logger.error('[social verification] completion failed', { id, platform, err: error.message });
-    await prisma.socialVerification.update({ where: { id }, data: { status: 'FAILED' } });
-    return { id, status: 'FAILED' };
+    // ApiError messages here are already written to be shown to the user (e.g.
+    // "No YouTube channel was found…"); anything else is an unexpected/internal
+    // failure, so fall back to a generic reason rather than leaking it raw.
+    const failureReason = error instanceof ApiError ? error.message : 'Verification could not be completed';
+    await prisma.socialVerification.update({ where: { id }, data: { status: 'FAILED', failureReason } });
+    return { id, status: 'FAILED', failureReason };
   }
 }
 async function status(userId, id) { const record = await prisma.socialVerification.findFirst({ where: { id, userId } }); if (!record) throw ApiError.notFound('Verification record not found'); if (record.status === 'PENDING' && record.expiresAt < new Date()) return prisma.socialVerification.update({ where: { id }, data: { status: 'EXPIRED' } }); return record; }
