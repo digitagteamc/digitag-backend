@@ -28,6 +28,34 @@ const POST_CATEGORY_TO_FREELANCER_SLUGS = {
   'Voice Over': ['music-production'],
 };
 
+// Interleaves posts round-robin by author (assumes `posts` is already sorted
+// newest-first) so one prolific poster's several recent posts don't bury
+// everyone else's — each author's most recent post surfaces before anyone's
+// second post, their second before anyone's third, and so on. Author order
+// is each author's own first appearance in the input, i.e. whoever posted
+// most recently goes first.
+function diversifyByAuthor(posts) {
+  const byUser = new Map();
+  for (const p of posts) {
+    if (!byUser.has(p.userId)) byUser.set(p.userId, []);
+    byUser.get(p.userId).push(p);
+  }
+  const userOrder = [...byUser.keys()];
+  const result = [];
+  for (let round = 0; ; round++) {
+    let addedAny = false;
+    for (const uid of userOrder) {
+      const authorPosts = byUser.get(uid);
+      if (authorPosts[round]) {
+        result.push(authorPosts[round]);
+        addedAny = true;
+      }
+    }
+    if (!addedAny) break;
+  }
+  return result;
+}
+
 function feedCacheKey(userId, role, query) {
   const q = [
     query.page || 1,
@@ -154,20 +182,29 @@ async function getFeed(user, query = {}) {
   const boostedIds = boostedItems.map((p) => p.id);
   if (boostedIds.length) where.id = { notIn: boostedIds };
 
-  const [items, total] = await Promise.all([
+  // Premium posts sort above all free posts (a flat partition, not a decaying
+  // boost — simplest thing that gives Premium real value). Within each tier,
+  // posts are diversified by author (see diversifyByAuthor) instead of a flat
+  // createdAt sort, so a prolific poster's several recent posts don't crowd
+  // out everyone else's — pagination is then sliced off this reordered list
+  // rather than off the DB's own row order.
+  const [lightPosts, total] = await Promise.all([
     prisma.post.findMany({
       where,
-      // Premium posts sort above all free posts, newest-first within each tier.
-      // v1: a flat partition, not a decaying boost — simplest thing that gives
-      // Premium real value. Worth revisiting if a stale premium post ever
-      // visibly buries fresh free content in practice.
-      orderBy: [{ user: { isPremium: 'desc' } }, { createdAt: 'desc' }],
-      skip,
-      take,
-      include: buildPostInclude(),
+      select: { id: true, userId: true, user: { select: { isPremium: true } } },
+      orderBy: { createdAt: 'desc' },
     }),
     prisma.post.count({ where }),
   ]);
+  const premiumLight = lightPosts.filter((p) => p.user?.isPremium);
+  const freeLight = lightPosts.filter((p) => !p.user?.isPremium);
+  const orderedIds = [...diversifyByAuthor(premiumLight), ...diversifyByAuthor(freeLight)].map((p) => p.id);
+  const pageIds = orderedIds.slice(skip, skip + take);
+  const hydrated = pageIds.length
+    ? await prisma.post.findMany({ where: { id: { in: pageIds } }, include: buildPostInclude() })
+    : [];
+  const hydratedById = new Map(hydrated.map((p) => [p.id, p]));
+  const items = pageIds.map((id) => hydratedById.get(id)).filter(Boolean);
 
   const allItems = [...boostedItems, ...items];
   const categoryMap = await resolveCategoryMap(allItems);

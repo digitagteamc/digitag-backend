@@ -24,6 +24,18 @@ function generateCode() {
   return String(crypto.randomInt(100000, 1000000));
 }
 
+/** Verifies Meta's X-Hub-Signature-256 header ("sha256=<hex>") against the raw
+ *  request body, so the webhook route can't be driven by arbitrary POSTs from
+ *  anyone who finds the URL — only requests actually signed by Meta with our
+ *  app secret. */
+function verifyWebhookSignature(rawBody, signatureHeader) {
+  if (!env.INSTAGRAM_APP_SECRET || !signatureHeader || !rawBody) return false;
+  const expected = `sha256=${crypto.createHmac('sha256', env.INSTAGRAM_APP_SECRET).update(rawBody).digest('hex')}`;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signatureHeader);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 async function fetchSenderProfile(igScopedId) {
   const token = env.INSTAGRAM_ACCESS_TOKEN;
   if (!token) return null;
@@ -215,4 +227,5 @@ module.exports = {
   listAccounts,
   removeAccount,
   handleWebhookMessage,
+  verifyWebhookSignature,
 };

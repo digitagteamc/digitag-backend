@@ -38,6 +38,12 @@ const webhookVerify = (req, res) => {
 
 // Meta webhook event receiver (POST)
 const webhookReceive = asyncHandler(async (req, res) => {
+  const signature = req.headers['x-hub-signature-256'];
+  if (!service.verifyWebhookSignature(req.rawBody, signature)) {
+    console.log('[Instagram] Webhook signature missing/invalid — rejecting');
+    return res.status(401).json({ success: false, message: 'Invalid signature' });
+  }
+
   // Always respond 200 immediately — Meta retries if we don't
   res.status(200).json({ success: true });
 
