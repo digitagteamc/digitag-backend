@@ -79,8 +79,13 @@ async function completeOtp({
     let isNewUser = false;
 
     if (!user) {
-        user = await prisma.user.create({
-            data: {
+        // Same race as verifyFirebaseToken below — upsert instead of create so
+        // two concurrent requests for a brand-new number can't both pass the
+        // findUnique check above and then collide on the unique mobileNumber
+        // constraint (which previously surfaced as an uncaught 500).
+        user = await prisma.user.upsert({
+            where: { mobileNumber },
+            create: {
                 mobileNumber,
                 countryCode,
                 role,
@@ -88,9 +93,14 @@ async function completeOtp({
                 isVerified: true,
                 lastLoginAt: new Date(),
             },
+            update: {
+                isVerified: true,
+                lastLoginAt: new Date(),
+                ...(categoryId ? { categoryId } : {}),
+            },
             include: { creatorProfile: true, freelancerProfile: true },
         });
-        isNewUser = true;
+        isNewUser = user.createdAt.getTime() === user.updatedAt.getTime();
     } else {
         // Keep original role — one phone number = one role forever
         user = await prisma.user.update({
@@ -158,8 +168,17 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
     }
 
     if (!user) {
-        user = await prisma.user.create({
-            data: {
+        // Two concurrent verify calls for the same brand-new number (e.g. a slow
+        // response causing the client to retry while the first request is still
+        // in flight) can both reach here having seen no existing row via the
+        // findUnique above. upsert makes the actual write atomic instead of
+        // racing two creates against the unique mobileNumber constraint — the
+        // loser previously threw an uncaught Prisma error (500), which is why
+        // tapping Verify repeatedly would eventually "work" once the winning
+        // request's row existed for a plain findUnique+update to pick up.
+        user = await prisma.user.upsert({
+            where: { mobileNumber: number },
+            create: {
                 mobileNumber: number,
                 countryCode,
                 role: role || ROLES.CREATOR,
@@ -167,9 +186,14 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
                 isVerified: true,
                 lastLoginAt: new Date(),
             },
+            update: {
+                isVerified: true,
+                lastLoginAt: new Date(),
+                ...(categoryId ? { categoryId } : {}),
+            },
             include: { creatorProfile: true, freelancerProfile: true },
         });
-        isNewUser = true;
+        isNewUser = user.createdAt.getTime() === user.updatedAt.getTime();
     } else {
         // Keep original role — one phone number = one role forever
         user = await prisma.user.update({
