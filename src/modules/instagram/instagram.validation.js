@@ -10,4 +10,11 @@ const startVerificationSchema = Joi.object({
 
 const idParam = Joi.object({ id: uuid.required() });
 
-module.exports = { startVerificationSchema, idParam };
+const reuseAccountSchema = Joi.object({
+  instagramUsername: Joi.string().trim().min(1).required().messages({
+    'string.empty': 'instagramUsername is required',
+    'any.required': 'instagramUsername is required',
+  }),
+});
+
+module.exports = { startVerificationSchema, idParam, reuseAccountSchema };

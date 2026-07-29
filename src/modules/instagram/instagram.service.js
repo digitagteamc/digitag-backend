@@ -75,9 +75,18 @@ async function startVerification(userId, instagramUrl) {
   const username = extractInstagramUsername(instagramUrl);
   if (!username) throw ApiError.badRequest('Invalid Instagram URL or username');
 
-  // Block if this handle is already verified by a different user
+  // Block if this handle is already verified under a genuinely different
+  // account — but a sibling role-profile of the SAME account (same person,
+  // switched roles via the multi-profile feature) isn't "another" user, so
+  // exclude the whole account's users, not just this one row, when we know
+  // the account.
+  const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { accountId: true } });
   const alreadyVerified = await prisma.instagramVerification.findFirst({
-    where: { instagramUsername: username, status: 'VERIFIED', NOT: { userId } },
+    where: {
+      instagramUsername: username,
+      status: 'VERIFIED',
+      NOT: currentUser?.accountId ? { user: { accountId: currentUser.accountId } } : { userId },
+    },
     select: { id: true },
   });
   if (alreadyVerified) {
@@ -119,6 +128,69 @@ async function startVerification(userId, instagramUrl) {
     expiresAt: record.expiresAt,
     digiTagInstagram: env.DIGITAG_INSTAGRAM_USERNAME || 'digitag.official',
   };
+}
+
+/** Returns an Instagram account already VERIFIED under a sibling role-profile
+ *  of the same account (same person, different User row via multi-profile),
+ *  if any — so the app can offer to reuse it instantly instead of requiring
+ *  a fresh DM verification. Not this user's own already-connected accounts. */
+async function getReusableAccount(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { accountId: true } });
+  if (!user?.accountId) return null;
+
+  const existing = await prisma.instagramVerification.findFirst({
+    where: {
+      status: 'VERIFIED',
+      NOT: { userId },
+      user: { accountId: user.accountId },
+    },
+    select: { instagramUsername: true, followers: true },
+    orderBy: { verifiedAt: 'desc' },
+  });
+  return existing;
+}
+
+/** Instantly links an Instagram account already verified under a sibling
+ *  role-profile (same account) to this user — no new DM round-trip needed,
+ *  since ownership was already proven for this same person. */
+async function reuseVerifiedAccount(userId, instagramUsername) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { accountId: true, role: true } });
+  if (!user?.accountId) throw ApiError.badRequest('No linked account found');
+
+  const alreadyOwned = await prisma.instagramVerification.findFirst({
+    where: { userId, instagramUsername, status: 'VERIFIED' },
+  });
+  if (alreadyOwned) {
+    return { id: alreadyOwned.id, instagramUsername, followers: alreadyOwned.followers };
+  }
+
+  const source = await prisma.instagramVerification.findFirst({
+    where: { status: 'VERIFIED', instagramUsername, NOT: { userId }, user: { accountId: user.accountId } },
+  });
+  if (!source) throw ApiError.notFound('No matching verified account found to reuse');
+
+  const record = await prisma.instagramVerification.create({
+    data: {
+      userId,
+      instagramUrl: source.instagramUrl,
+      instagramUsername,
+      verificationCode: generateCode(),
+      status: 'VERIFIED',
+      verifiedAt: new Date(),
+      followers: source.followers,
+      expiresAt: source.expiresAt,
+    },
+  });
+
+  if (source.followers !== null) {
+    if (user.role === 'CREATOR') {
+      await prisma.creatorProfile.updateMany({ where: { userId }, data: { instagramFollowers: source.followers } });
+    } else if (user.role === 'FREELANCER') {
+      await prisma.freelancerProfile.updateMany({ where: { userId }, data: { instagramFollowers: source.followers } });
+    }
+  }
+
+  return { id: record.id, instagramUsername, followers: record.followers };
 }
 
 async function listAccounts(userId) {
@@ -228,4 +300,6 @@ module.exports = {
   removeAccount,
   handleWebhookMessage,
   verifyWebhookSignature,
+  getReusableAccount,
+  reuseVerifiedAccount,
 };

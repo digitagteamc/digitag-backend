@@ -25,6 +25,16 @@ const removeAccount = asyncHandler(async (req, res) => {
   return success(res, { message: 'Account removed' });
 });
 
+const getReusableAccount = asyncHandler(async (req, res) => {
+  const data = await service.getReusableAccount(req.user.id);
+  return success(res, { message: 'Reusable account fetched', data });
+});
+
+const reuseAccount = asyncHandler(async (req, res) => {
+  const data = await service.reuseVerifiedAccount(req.user.id, req.body.instagramUsername);
+  return success(res, { message: 'Instagram account linked', data });
+});
+
 // Meta webhook challenge-response (GET)
 const webhookVerify = (req, res) => {
   const mode = req.query['hub.mode'];
@@ -60,4 +70,4 @@ const webhookReceive = asyncHandler(async (req, res) => {
   }
 });
 
-module.exports = { startVerification, getStatus, listAccounts, removeAccount, webhookVerify, webhookReceive };
+module.exports = { startVerification, getStatus, listAccounts, removeAccount, getReusableAccount, reuseAccount, webhookVerify, webhookReceive };
