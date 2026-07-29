@@ -101,24 +101,29 @@ async function completeOtp({
             include: { creatorProfile: true, freelancerProfile: true }
         });
 
-        if (legacyUser) {
-            account = await prisma.account.create({
-                data: { mobileNumber, countryCode }
-            });
+        // upsert instead of create — two concurrent verify calls for the same
+        // brand-new number (e.g. a slow response causing a retry while the
+        // first request is still in flight) can both reach here having seen
+        // no existing account. upsert makes the write atomic instead of
+        // racing two creates against the unique Account.mobileNumber
+        // constraint, whose loser previously surfaced as an uncaught 500.
+        account = await prisma.account.upsert({
+            where: { mobileNumber },
+            create: { mobileNumber, countryCode },
+            update: {},
+        });
+
+        if (legacyUser && !legacyUser.accountId) {
             await prisma.user.update({
                 where: { id: legacyUser.id },
                 data: { accountId: account.id }
             });
-            account = await prisma.account.findUnique({
-                where: { id: account.id },
-                include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
-            });
-        } else {
-            account = await prisma.account.create({
-                data: { mobileNumber, countryCode },
-                include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
-            });
         }
+
+        account = await prisma.account.findUnique({
+            where: { id: account.id },
+            include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
+        });
     }
 
     let isNewUser = false;
@@ -205,27 +210,28 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
             include: { creatorProfile: true, freelancerProfile: true }
         });
 
-        if (legacyUser) {
-            if (legacyUser.status === 'SUSPENDED' || legacyUser.status === 'DELETED') {
-                throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
-            }
-            account = await prisma.account.create({
-                data: { mobileNumber: number, countryCode }
-            });
+        if (legacyUser && (legacyUser.status === 'SUSPENDED' || legacyUser.status === 'DELETED')) {
+            throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
+        }
+
+        // upsert instead of create — same race as completeOtp above.
+        account = await prisma.account.upsert({
+            where: { mobileNumber: number },
+            create: { mobileNumber: number, countryCode },
+            update: {},
+        });
+
+        if (legacyUser && !legacyUser.accountId) {
             await prisma.user.update({
                 where: { id: legacyUser.id },
                 data: { accountId: account.id }
             });
-            account = await prisma.account.findUnique({
-                where: { id: account.id },
-                include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
-            });
-        } else {
-            account = await prisma.account.create({
-                data: { mobileNumber: number, countryCode },
-                include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
-            });
         }
+
+        account = await prisma.account.findUnique({
+            where: { id: account.id },
+            include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
+        });
     }
 
     let isNewUser = false;
@@ -334,17 +340,16 @@ async function switchRole(userId, role) {
     
     let accountId = currentUser.accountId;
     if (!accountId) {
-        let account = await prisma.account.findUnique({
-            where: { mobileNumber: currentUser.mobileNumber }
+        // upsert instead of find-then-create — same race as completeOtp/
+        // verifyFirebaseToken above.
+        const account = await prisma.account.upsert({
+            where: { mobileNumber: currentUser.mobileNumber },
+            create: {
+                mobileNumber: currentUser.mobileNumber,
+                countryCode: currentUser.countryCode,
+            },
+            update: {},
         });
-        if (!account) {
-            account = await prisma.account.create({
-                data: {
-                    mobileNumber: currentUser.mobileNumber,
-                    countryCode: currentUser.countryCode,
-                }
-            });
-        }
         accountId = account.id;
         await prisma.user.update({
             where: { id: userId },
