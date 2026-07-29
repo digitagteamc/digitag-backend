@@ -2,6 +2,7 @@ const asyncHandler = require('../../utils/asyncHandler');
 const { success } = require('../../utils/apiResponse');
 const STATUS = require('../../constants/statusCodes');
 const service = require('./calls.service');
+const voip = require('../../services/push/voip.service');
 
 const initiateCall = asyncHandler(async (req, res) => {
   const data = await service.initiateCall(req.user.id, req.body.calleeId);
@@ -38,4 +39,9 @@ const unregisterFcmToken = asyncHandler(async (req, res) => {
   return success(res, { message: 'FCM token unregistered' });
 });
 
-module.exports = { initiateCall, acceptCall, declineCall, endCall, getCall, registerFcmToken, unregisterFcmToken };
+const registerVoipToken = asyncHandler(async (req, res) => {
+  await voip.registerVoipToken(req.user.id, req.body.voipToken);
+  return success(res, { message: 'VoIP token registered' });
+});
+
+module.exports = { initiateCall, acceptCall, declineCall, endCall, getCall, registerFcmToken, unregisterFcmToken, registerVoipToken };

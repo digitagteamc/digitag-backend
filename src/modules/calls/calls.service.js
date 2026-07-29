@@ -4,6 +4,7 @@ const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const env = require('../../config/env');
 const push = require('../../services/push/push.service');
+const voip = require('../../services/push/voip.service');
 const { assertNotBlocked } = require('../blocks/block.service');
 
 const TOKEN_EXPIRY_SECONDS = 3600;
@@ -96,6 +97,12 @@ async function initiateCall(callerId, calleeId) {
       { title: `📞 ${callerName}`, body: 'Incoming DigiTag call — tap to answer' },
     ),
   { respectNotificationSetting: false });
+
+  // iOS only, and only once a VoIP Services key is configured — additive to
+  // the FCM push above, not a replacement. This is what actually makes the
+  // call ring via CallKit when the app is fully backgrounded or killed,
+  // which the FCM push alone can't guarantee on iOS.
+  voip.sendIncomingCallVoipPush(calleeId, { callId: call.id, channelName, callerName, callerId }).catch(() => {});
 
   return { callId: call.id, channelName, token, appId: env.AGORA_APP_ID };
 }

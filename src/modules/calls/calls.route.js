@@ -8,6 +8,7 @@ router.use(authenticate);
 
 router.post('/fcm-token', controller.registerFcmToken);
 router.delete('/fcm-token', controller.unregisterFcmToken);
+router.post('/voip-token', controller.registerVoipToken);
 router.post('/initiate', controller.initiateCall);
 router.get('/:id', controller.getCall);
 router.post('/:id/accept', controller.acceptCall);

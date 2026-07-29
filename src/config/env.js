@@ -120,6 +120,20 @@ const env = {
     sandbox: optional('APPLE_IAP_SANDBOX') !== 'false',
   },
 
+  // PushKit VoIP push (iOS incoming calls) — a "VoIP Services" key from
+  // Apple Developer > Certificates, Identifiers & Profiles > Keys, separate
+  // from the IAP key above. APPLE_VOIP_PRIVATE_KEY is that key's .p8 file
+  // contents (same \n-escaped PEM convention as APPLE_PRIVATE_KEY). Left
+  // unconfigured until that key exists — incoming calls just fall back to
+  // the existing FCM-based ringing push until then.
+  APPLE_VOIP: {
+    keyId: optional('APPLE_VOIP_KEY_ID'),
+    teamId: optional('APPLE_VOIP_TEAM_ID'),
+    privateKey: optional('APPLE_VOIP_PRIVATE_KEY'),
+    bundleId: optional('APPLE_VOIP_BUNDLE_ID'),
+    production: optional('APPLE_VOIP_PRODUCTION') === 'true',
+  },
+
   // Remote kill switch for the whole Premium surface (Upgrade button, Who
   // Viewed My Profile, Boost) — the app reads this from GET /config on
   // launch, so toggling it is just an env change + restart here, never an

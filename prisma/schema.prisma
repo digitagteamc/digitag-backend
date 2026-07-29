@@ -417,6 +417,11 @@ model FcmDevice {
   userId    String
   token     String   @unique
   platform  String? // 'ios' | 'android'
+  // PushKit VoIP token (iOS only) — separate from the FCM token above.
+  // Incoming calls are sent here via direct APNs VoIP push instead of FCM so
+  // they reliably wake the app and ring via CallKit even when it's fully
+  // backgrounded or killed, which a regular FCM push can't guarantee on iOS.
+  voipToken String?  @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
