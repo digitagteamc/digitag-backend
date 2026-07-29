@@ -206,6 +206,20 @@ async function removeAccount(userId, id) {
   const record = await prisma.instagramVerification.findFirst({ where: { id, userId, status: 'VERIFIED' } });
   if (!record) throw ApiError.notFound('Connected Instagram account not found');
   await prisma.instagramVerification.update({ where: { id }, data: { status: 'REMOVED' } });
+
+  // Signup separately writes the handle onto the profile itself
+  // (CreatorProfile/FreelancerProfile.instagramHandle) alongside creating
+  // this verification record. If this was that same handle, clear it there
+  // too — otherwise a since-removed account's icon/link keeps reappearing
+  // on the profile with no way to remove it, since that field isn't driven
+  // by this verification list at all.
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  const staleHandleWhere = { userId, instagramHandle: { equals: record.instagramUsername, mode: 'insensitive' } };
+  if (user?.role === 'CREATOR') {
+    await prisma.creatorProfile.updateMany({ where: staleHandleWhere, data: { instagramHandle: null, instagramFollowers: null } });
+  } else if (user?.role === 'FREELANCER') {
+    await prisma.freelancerProfile.updateMany({ where: staleHandleWhere, data: { instagramHandle: null, instagramFollowers: null } });
+  }
 }
 
 async function getVerificationStatus(userId, id) {
