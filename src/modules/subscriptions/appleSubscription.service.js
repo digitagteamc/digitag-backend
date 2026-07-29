@@ -9,6 +9,7 @@ const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const env = require('../../config/env');
 const logger = require('../../utils/logger');
+const { syncPremiumStatus } = require('../../utils/userHelpers');
 
 const APPLE_ROOT_CA = fs.readFileSync(path.join(__dirname, '../../config/certs/AppleRootCA-G3.cer'));
 
@@ -73,7 +74,7 @@ async function upsertFromDecodedTransaction(userId, tx) {
     create: { userId, ...data },
     update: data,
   });
-  await prisma.user.update({ where: { id: userId }, data: { isPremium: status === 'ACTIVE' } });
+  await syncPremiumStatus(userId, status === 'ACTIVE');
   return status;
 }
 

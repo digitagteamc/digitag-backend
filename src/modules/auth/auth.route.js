@@ -25,5 +25,7 @@ router.post('/logout', validate(schemas.logoutSchema), controller.logout);
 router.get('/me', authenticate, controller.me);
 router.post('/switch-role', authenticate, validate(schemas.switchRoleSchema), controller.switchRole);
 router.delete('/account', authenticate, controller.deleteAccount);
+router.get('/profiles', authenticate, controller.getProfiles);
+router.post('/select-profile', authenticate, validate(schemas.selectProfileSchema), controller.selectProfile);
 
 module.exports = router;

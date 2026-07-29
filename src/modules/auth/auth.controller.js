@@ -57,4 +57,14 @@ const deleteAccount = asyncHandler(async (req, res) => {
   return success(res, { message: 'Account permanently deleted' });
 });
 
-module.exports = { sendOtp, verifyOtp, verifyFirebase, refreshToken, logout, me, switchRole, deleteAccount };
+const getProfiles = asyncHandler(async (req, res) => {
+  const result = await authService.getProfiles(req.user.id);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: result });
+});
+
+const selectProfile = asyncHandler(async (req, res) => {
+  const result = await authService.selectProfile(req.user.id, req.body.profileId);
+  return success(res, { message: MESSAGES.AUTH.LOGIN_SUCCESS, data: result });
+});
+
+module.exports = { sendOtp, verifyOtp, verifyFirebase, refreshToken, logout, me, switchRole, deleteAccount, getProfiles, selectProfile };

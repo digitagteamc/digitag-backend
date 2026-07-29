@@ -6,6 +6,8 @@ const razorpay = require('../../config/razorpay');
 const env = require('../../config/env');
 const logger = require('../../utils/logger');
 
+const { syncPremiumStatus } = require('../../utils/userHelpers');
+
 // Razorpay's subscription statuses are already lowercase versions of our enum
 // (created/authenticated/active/pending/halted/cancelled/completed/expired).
 function toLocalStatus(razorpayStatus) {
@@ -103,10 +105,7 @@ async function handleWebhookEvent(payload) {
   }
 
   await prisma.subscription.update({ where: { id: subscription.id }, data });
-  await prisma.user.update({
-    where: { id: subscription.userId },
-    data: { isPremium: status === 'ACTIVE' },
-  });
+  await syncPremiumStatus(subscription.userId, status === 'ACTIVE');
 }
 
 module.exports = { createSubscription, getMySubscription, verifyWebhookSignature, handleWebhookEvent };

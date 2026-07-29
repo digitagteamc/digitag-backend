@@ -10,6 +10,7 @@ const { parsePagination, buildPaginationMeta } = require('../../utils/pagination
 const cache = require('../../services/cache/cache.service');
 const categoryService = require('../categories/category.service');
 const logger = require('../../utils/logger');
+const { syncPremiumStatus } = require('../../utils/userHelpers');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1053,7 +1054,7 @@ async function listSubscriptions(query = {}) {
 async function grantPremium(adminId, adminName, userId) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || user.status === 'DELETED') throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
-  await prisma.user.update({ where: { id: userId }, data: { isPremium: true } });
+  await syncPremiumStatus(userId, true);
   await logAdminAction(adminId, adminName, 'Granted premium (manual override)', user.mobileNumber);
   return { ok: true };
 }
@@ -1061,7 +1062,7 @@ async function grantPremium(adminId, adminName, userId) {
 async function revokePremium(adminId, adminName, userId) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || user.status === 'DELETED') throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
-  await prisma.user.update({ where: { id: userId }, data: { isPremium: false } });
+  await syncPremiumStatus(userId, false);
   await logAdminAction(adminId, adminName, 'Revoked premium (manual override)', user.mobileNumber);
   return { ok: true };
 }

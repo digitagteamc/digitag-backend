@@ -17,15 +17,33 @@ const logger = require('../../utils/logger');
  * and can freely switch between them via the /auth/switch-role endpoint.
  */
 
-function buildProfileMap(user) {
+async function buildProfileMap(user) {
+    if (!user) return { CREATOR: false, FREELANCER: false };
+    const query = user.accountId
+        ? { accountId: user.accountId }
+        : { mobileNumber: user.mobileNumber };
+    const allUsers = await prisma.user.findMany({
+        where: query,
+        include: { creatorProfile: true, freelancerProfile: true }
+    });
     return {
-        CREATOR: Boolean(user?.creatorProfile && user.creatorProfile.name),
-        FREELANCER: Boolean(user?.freelancerProfile && user.freelancerProfile.name),
+        CREATOR: Boolean(allUsers.find(u => u.role === 'CREATOR' && u.creatorProfile && u.creatorProfile.name)),
+        FREELANCER: Boolean(allUsers.find(u => u.role === 'FREELANCER' && u.freelancerProfile && u.freelancerProfile.name)),
     };
 }
 
 async function initiateOtp({ mobileNumber, countryCode = '+91', role, categoryId }) {
-    let user = await prisma.user.findUnique({ where: { mobileNumber } });
+    let account = await prisma.account.findUnique({
+        where: { mobileNumber },
+        include: { users: true }
+    });
+
+    let user = null;
+    if (account && account.users.length > 0) {
+        user = account.users.find(u => u.role === role) || account.users[0];
+    } else {
+        user = await prisma.user.findFirst({ where: { mobileNumber } });
+    }
 
     if (user) {
         if (user.status === 'SUSPENDED' || user.status === 'DELETED') {
@@ -72,37 +90,55 @@ async function completeOtp({
 }) {
     await otpService.verifyOtp({ mobileNumber, code, purpose: 'LOGIN' });
 
-    let user = await prisma.user.findUnique({
+    let account = await prisma.account.findUnique({
         where: { mobileNumber },
-        include: { creatorProfile: true, freelancerProfile: true },
+        include: { users: { include: { creatorProfile: true, freelancerProfile: true } } },
     });
+
+    if (!account) {
+        const legacyUser = await prisma.user.findFirst({
+            where: { mobileNumber, accountId: null },
+            include: { creatorProfile: true, freelancerProfile: true }
+        });
+
+        if (legacyUser) {
+            account = await prisma.account.create({
+                data: { mobileNumber, countryCode }
+            });
+            await prisma.user.update({
+                where: { id: legacyUser.id },
+                data: { accountId: account.id }
+            });
+            account = await prisma.account.findUnique({
+                where: { id: account.id },
+                include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
+            });
+        } else {
+            account = await prisma.account.create({
+                data: { mobileNumber, countryCode },
+                include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
+            });
+        }
+    }
+
     let isNewUser = false;
+    let user = account.users ? account.users.find(u => u.role === role) : null;
 
     if (!user) {
-        // Same race as verifyFirebaseToken below — upsert instead of create so
-        // two concurrent requests for a brand-new number can't both pass the
-        // findUnique check above and then collide on the unique mobileNumber
-        // constraint (which previously surfaced as an uncaught 500).
-        user = await prisma.user.upsert({
-            where: { mobileNumber },
-            create: {
+        user = await prisma.user.create({
+            data: {
                 mobileNumber,
                 countryCode,
                 role,
                 categoryId: categoryId || null,
                 isVerified: true,
                 lastLoginAt: new Date(),
-            },
-            update: {
-                isVerified: true,
-                lastLoginAt: new Date(),
-                ...(categoryId ? { categoryId } : {}),
+                accountId: account.id,
             },
             include: { creatorProfile: true, freelancerProfile: true },
         });
-        isNewUser = user.createdAt.getTime() === user.updatedAt.getTime();
+        isNewUser = true;
     } else {
-        // Keep original role — one phone number = one role forever
         user = await prisma.user.update({
             where: { id: user.id },
             data: {
@@ -115,7 +151,7 @@ async function completeOtp({
     }
 
     const { accessToken, refreshToken } = await tokenService.issueTokens(user, context);
-    const profiles = buildProfileMap(user);
+    const profiles = await buildProfileMap(user);
 
     return {
         user: sanitizeUser(user),
@@ -142,60 +178,74 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
         throw ApiError.unauthorized('Invalid Firebase token');
     }
 
-    const mobileNumber = decodedToken.phone_number;
-    if (!mobileNumber) {
+    const firebaseMobileNumber = decodedToken.phone_number;
+    if (!firebaseMobileNumber) {
         throw ApiError.badRequest('Firebase token does not contain a phone number');
     }
 
-    // Format phone number to match the app's structure (Firebase uses E.164, e.g., +919876543210)
-    // We strip the country code +91 for searching if your DB stores it separately or together.
-    // The previous completeOtp uses mobileNumber and countryCode='+91'. 
-    // Assuming mobileNumber in DB is without '+91' or whatever country code, we need to handle it.
-    let number = mobileNumber;
+    let number = firebaseMobileNumber;
     let countryCode = '+91';
     if (number.startsWith('+91')) {
         number = number.slice(3);
     }
 
-    let user = await prisma.user.findUnique({
+    let account = await prisma.account.findUnique({
         where: { mobileNumber: number },
-        include: { creatorProfile: true, freelancerProfile: true },
+        include: { users: { include: { creatorProfile: true, freelancerProfile: true } } },
     });
-    let isNewUser = false;
 
-    if (user && (user.status === 'SUSPENDED' || user.status === 'DELETED')) {
-        throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
+    if (account) {
+        const suspendedUser = account.users.find(u => u.status === 'SUSPENDED' || u.status === 'DELETED');
+        if (suspendedUser) {
+            throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
+        }
+    } else {
+        const legacyUser = await prisma.user.findFirst({
+            where: { mobileNumber: number, accountId: null },
+            include: { creatorProfile: true, freelancerProfile: true }
+        });
+
+        if (legacyUser) {
+            if (legacyUser.status === 'SUSPENDED' || legacyUser.status === 'DELETED') {
+                throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
+            }
+            account = await prisma.account.create({
+                data: { mobileNumber: number, countryCode }
+            });
+            await prisma.user.update({
+                where: { id: legacyUser.id },
+                data: { accountId: account.id }
+            });
+            account = await prisma.account.findUnique({
+                where: { id: account.id },
+                include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
+            });
+        } else {
+            account = await prisma.account.create({
+                data: { mobileNumber: number, countryCode },
+                include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
+            });
+        }
     }
 
+    let isNewUser = false;
+    let user = account.users ? account.users.find(u => u.role === role) : null;
+
     if (!user) {
-        // Two concurrent verify calls for the same brand-new number (e.g. a slow
-        // response causing the client to retry while the first request is still
-        // in flight) can both reach here having seen no existing row via the
-        // findUnique above. upsert makes the actual write atomic instead of
-        // racing two creates against the unique mobileNumber constraint — the
-        // loser previously threw an uncaught Prisma error (500), which is why
-        // tapping Verify repeatedly would eventually "work" once the winning
-        // request's row existed for a plain findUnique+update to pick up.
-        user = await prisma.user.upsert({
-            where: { mobileNumber: number },
-            create: {
+        user = await prisma.user.create({
+            data: {
                 mobileNumber: number,
                 countryCode,
                 role: role || ROLES.CREATOR,
                 categoryId: categoryId || null,
                 isVerified: true,
                 lastLoginAt: new Date(),
-            },
-            update: {
-                isVerified: true,
-                lastLoginAt: new Date(),
-                ...(categoryId ? { categoryId } : {}),
+                accountId: account.id,
             },
             include: { creatorProfile: true, freelancerProfile: true },
         });
-        isNewUser = user.createdAt.getTime() === user.updatedAt.getTime();
+        isNewUser = true;
     } else {
-        // Keep original role — one phone number = one role forever
         user = await prisma.user.update({
             where: { id: user.id },
             data: {
@@ -208,7 +258,7 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
     }
 
     const { accessToken, refreshToken } = await tokenService.issueTokens(user, context);
-    const profiles = buildProfileMap(user);
+    const profiles = await buildProfileMap(user);
 
     return {
         user: sanitizeUser(user),
@@ -259,7 +309,7 @@ async function getMe(userId) {
     user.freelancerProfile = attachResolvedCategories(user.freelancerProfile);
 
     const sanitized = sanitizeUser(user);
-    const profiles = buildProfileMap(user);
+    const profiles = await buildProfileMap(user);
     return {
         ...sanitized,
         activeRole: user.role,
@@ -269,27 +319,74 @@ async function getMe(userId) {
 }
 
 /**
- * Switch the active role on the account. Does NOT require the target role
- * profile to exist — the UI can route to the signup form afterwards if the
- * profile still needs to be filled. Returns the fresh profile map and a flag
- * indicating whether the newly-active role already has a complete profile.
+ * Switch the active role on the account. Find or create a separate User row
+ * for that role under the same Account, and issue tokens for it.
  */
 async function switchRole(userId, role) {
     if (role !== ROLES.CREATOR && role !== ROLES.FREELANCER) {
         throw ApiError.badRequest('Role must be CREATOR or FREELANCER');
     }
-    const user = await prisma.user.update({
+    
+    const currentUser = await prisma.user.findUnique({
         where: { id: userId },
-        data: { role },
-        include: { creatorProfile: true, freelancerProfile: true },
     });
-    const profiles = buildProfileMap(user);
+    if (!currentUser) throw ApiError.notFound('User not found');
+    
+    let accountId = currentUser.accountId;
+    if (!accountId) {
+        let account = await prisma.account.findUnique({
+            where: { mobileNumber: currentUser.mobileNumber }
+        });
+        if (!account) {
+            account = await prisma.account.create({
+                data: {
+                    mobileNumber: currentUser.mobileNumber,
+                    countryCode: currentUser.countryCode,
+                }
+            });
+        }
+        accountId = account.id;
+        await prisma.user.update({
+            where: { id: userId },
+            data: { accountId }
+        });
+    }
+
+    let targetUser = await prisma.user.findFirst({
+        where: { accountId, role },
+        include: { creatorProfile: true, freelancerProfile: true }
+    });
+
+    if (!targetUser) {
+        targetUser = await prisma.user.create({
+            data: {
+                mobileNumber: currentUser.mobileNumber,
+                countryCode: currentUser.countryCode,
+                role,
+                accountId,
+                isVerified: true,
+                lastLoginAt: new Date(),
+            },
+            include: { creatorProfile: true, freelancerProfile: true }
+        });
+    } else {
+        targetUser = await prisma.user.update({
+            where: { id: targetUser.id },
+            data: { lastLoginAt: new Date() },
+            include: { creatorProfile: true, freelancerProfile: true }
+        });
+    }
+
+    const { accessToken, refreshToken } = await tokenService.issueTokens(targetUser);
+    const profiles = await buildProfileMap(targetUser);
+
     return {
-        user: sanitizeUser(user),
-        activeRole: user.role,
+        user: sanitizeUser(targetUser),
+        tokens: { accessToken, refreshToken },
+        activeRole: targetUser.role,
         profiles,
         availableRoles: Object.keys(profiles).filter((r) => profiles[r]),
-        isProfileCompleted: profiles[user.role] === true,
+        isProfileCompleted: profiles[targetUser.role] === true,
     };
 }
 
@@ -298,26 +395,23 @@ async function switchRole(userId, role) {
 const BILLABLE_SUBSCRIPTION_STATES = new Set(['CREATED', 'AUTHENTICATED', 'ACTIVE', 'PENDING', 'HALTED']);
 
 /**
- * Deletes the user's account — soft-delete + anonymize, NOT a row wipe:
- *
- * - The row (and their posts/messages/collabs/reports) is KEPT for the admin
- *   panel, marked status=DELETED so the app treats it as gone everywhere.
- * - Identity is tombstoned: mobileNumber and profile tagIds are renamed to
- *   `deleted:<ts>:<original>`, which frees the unique slots — the same person
- *   signing up again with the same number starts as a brand-new user with no
- *   history attached, while admins can still read the original value inside
- *   the tombstone.
- * - Social verifications are removed so the same Instagram/YouTube/Facebook
- *   account can be re-verified by the returning "new" user.
- * - Any billable Razorpay subscription is cancelled first so a deleted
- *   account can never keep getting charged.
- *
- * Google Play/App Store require self-service account deletion — this powers it.
+ * Deletes the user's account — soft-delete + anonymize the whole account and all profiles:
  */
 async function deleteAccount(userId) {
     const user = await prisma.user.findUnique({
         where: { id: userId },
         include: {
+            account: {
+                include: {
+                    users: {
+                        include: {
+                            subscription: true,
+                            creatorProfile: { select: { tagId: true } },
+                            freelancerProfile: { select: { tagId: true } },
+                        }
+                    }
+                }
+            },
             subscription: true,
             creatorProfile: { select: { tagId: true } },
             freelancerProfile: { select: { tagId: true } },
@@ -326,58 +420,128 @@ async function deleteAccount(userId) {
     if (!user) throw ApiError.notFound('Account not found');
     if (user.status === 'DELETED') return; // idempotent
 
-    // 1. Stop billing before anything else — if this account has a live
-    //    subscription and Razorpay is unreachable, abort rather than strand
-    //    a recurring charge on an account that no longer exists in the app.
-    if (user.subscription && BILLABLE_SUBSCRIPTION_STATES.has(user.subscription.status)) {
-        try {
-            await razorpay.subscriptions.cancel(user.subscription.razorpaySubscriptionId);
-        } catch (err) {
-            // Already-cancelled/completed on Razorpay's side is fine; anything
-            // else must fail the deletion so billing can't outlive the account.
-            const desc = String(err?.error?.description || err?.message || '');
-            if (!/not cancellable|already cancelled|completed|expired/i.test(desc)) {
-                logger.error('[deleteAccount] Razorpay cancel failed', { userId, err: desc });
-                throw ApiError.internal('Could not cancel your subscription. Please try again or contact support.');
+    const profilesToDelete = user.account?.users || [user];
+    
+    for (const profile of profilesToDelete) {
+        if (profile.subscription && BILLABLE_SUBSCRIPTION_STATES.has(profile.subscription.status)) {
+            try {
+                await razorpay.subscriptions.cancel(profile.subscription.razorpaySubscriptionId);
+            } catch (err) {
+                const desc = String(err?.error?.description || err?.message || '');
+                if (!/not cancellable|already cancelled|completed|expired/i.test(desc)) {
+                    logger.error('[deleteAccount] Razorpay cancel failed', { userId: profile.id, err: desc });
+                    throw ApiError.internal('Could not cancel your subscription. Please try again or contact support.');
+                }
             }
+            await prisma.subscription.update({ where: { userId: profile.id }, data: { status: 'CANCELLED' } });
         }
-        await prisma.subscription.update({ where: { userId }, data: { status: 'CANCELLED' } });
     }
 
     const stamp = Date.now();
     const tombstone = (value) => `deleted:${stamp}:${value}`;
 
-    await prisma.$transaction([
-        // 2. Tombstone identity — frees the unique mobileNumber/tagId slots.
-        prisma.user.update({
-            where: { id: userId },
-            data: {
-                status: 'DELETED',
-                mobileNumber: tombstone(user.mobileNumber),
-                fcmToken: null,
-                isPremium: false,
-            },
-        }),
-        ...(user.creatorProfile?.tagId
-            ? [prisma.creatorProfile.update({ where: { userId }, data: { tagId: tombstone(user.creatorProfile.tagId) } })]
-            : []),
-        ...(user.freelancerProfile?.tagId
-            ? [prisma.freelancerProfile.update({ where: { userId }, data: { tagId: tombstone(user.freelancerProfile.tagId) } })]
-            : []),
-        // 3. Kill every session and push target.
-        prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } }),
-        prisma.fcmDevice.deleteMany({ where: { userId } }),
-        // 4. Hide their content from the app (rows kept for admin).
-        prisma.post.updateMany({ where: { userId }, data: { isActive: false } }),
-        // 5. Remove social-graph edges and personal lists.
-        prisma.follow.deleteMany({ where: { OR: [{ followerId: userId }, { followingId: userId }] } }),
-        prisma.block.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }),
-        prisma.savedPost.deleteMany({ where: { userId } }),
-        prisma.notification.deleteMany({ where: { userId } }),
-        // 6. Free social identities for re-verification by the returning user.
-        prisma.socialVerification.deleteMany({ where: { userId } }),
-        prisma.instagramVerification.deleteMany({ where: { userId } }),
-    ]);
+    const transactionQueries = [];
+    
+    if (user.accountId) {
+        transactionQueries.push(
+            prisma.account.update({
+                where: { id: user.accountId },
+                data: {
+                    mobileNumber: tombstone(user.mobileNumber),
+                }
+            })
+        );
+    }
+
+    for (const profile of profilesToDelete) {
+        transactionQueries.push(
+            prisma.user.update({
+                where: { id: profile.id },
+                data: {
+                    status: 'DELETED',
+                    mobileNumber: tombstone(profile.mobileNumber),
+                    fcmToken: null,
+                    isPremium: false,
+                },
+            }),
+            ...(profile.creatorProfile?.tagId
+                ? [prisma.creatorProfile.update({ where: { userId: profile.id }, data: { tagId: tombstone(profile.creatorProfile.tagId) } })]
+                : []),
+            ...(profile.freelancerProfile?.tagId
+                ? [prisma.freelancerProfile.update({ where: { userId: profile.id }, data: { tagId: tombstone(profile.freelancerProfile.tagId) } })]
+                : []),
+            prisma.refreshToken.updateMany({ where: { userId: profile.id, revokedAt: null }, data: { revokedAt: new Date() } }),
+            prisma.fcmDevice.deleteMany({ where: { userId: profile.id } }),
+            prisma.post.updateMany({ where: { userId: profile.id }, data: { isActive: false } }),
+            prisma.follow.deleteMany({ where: { OR: [{ followerId: profile.id }, { followingId: profile.id }] } }),
+            prisma.block.deleteMany({ where: { OR: [{ blockerId: profile.id }, { blockedId: profile.id }] } }),
+            prisma.savedPost.deleteMany({ where: { userId: profile.id } }),
+            prisma.notification.deleteMany({ where: { userId: profile.id } }),
+            prisma.socialVerification.deleteMany({ where: { userId: profile.id } }),
+            prisma.instagramVerification.deleteMany({ where: { userId: profile.id } }),
+        );
+    }
+
+    await prisma.$transaction(transactionQueries);
+}
+
+async function getProfiles(userId) {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { accountId: true, mobileNumber: true }
+    });
+    if (!user) throw ApiError.notFound('User not found');
+
+    const query = user.accountId ? { accountId: user.accountId } : { mobileNumber: user.mobileNumber };
+    const users = await prisma.user.findMany({
+        where: query,
+        include: {
+            creatorProfile: { select: { name: true, profilePicture: true } },
+            freelancerProfile: { select: { name: true, profilePicture: true } }
+        }
+    });
+
+    return users.map(u => ({
+        id: u.id,
+        role: u.role,
+        name: u.role === 'CREATOR' ? u.creatorProfile?.name : u.freelancerProfile?.name,
+        profilePicture: u.role === 'CREATOR' ? u.creatorProfile?.profilePicture : u.freelancerProfile?.profilePicture,
+        isProfileCompleted: u.isProfileCompleted,
+    }));
+}
+
+async function selectProfile(userId, targetProfileId) {
+    const currentUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { accountId: true, mobileNumber: true }
+    });
+    if (!currentUser) throw ApiError.notFound('User not found');
+
+    const targetUser = await prisma.user.findUnique({
+        where: { id: targetProfileId },
+        include: { creatorProfile: true, freelancerProfile: true }
+    });
+    if (!targetUser) throw ApiError.notFound('Profile not found');
+
+    const isSameAccount = currentUser.accountId
+        ? targetUser.accountId === currentUser.accountId
+        : targetUser.mobileNumber === currentUser.mobileNumber;
+
+    if (!isSameAccount) {
+        throw ApiError.forbidden('Profile does not belong to this account');
+    }
+
+    const { accessToken, refreshToken } = await tokenService.issueTokens(targetUser);
+    const profiles = await buildProfileMap(targetUser);
+
+    return {
+        user: sanitizeUser(targetUser),
+        tokens: { accessToken, refreshToken },
+        activeRole: targetUser.role,
+        profiles,
+        availableRoles: Object.keys(profiles).filter((r) => profiles[r]),
+        isProfileCompleted: profiles[targetUser.role] === true,
+    };
 }
 
 function sanitizeUser(user) {
@@ -386,4 +550,4 @@ function sanitizeUser(user) {
     return { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, isPremium, status, createdAt, creatorProfile, freelancerProfile };
 }
 
-module.exports = { initiateOtp, completeOtp, verifyFirebaseToken, refreshTokens, logout, getMe, switchRole, deleteAccount };
+module.exports = { initiateOtp, completeOtp, verifyFirebaseToken, refreshTokens, logout, getMe, switchRole, deleteAccount, getProfiles, selectProfile };
