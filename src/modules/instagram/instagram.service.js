@@ -199,12 +199,26 @@ async function listAccounts(userId) {
     select: { id: true, instagramUsername: true, followers: true, verifiedAt: true },
     orderBy: { verifiedAt: 'asc' },
   });
-  return accounts;
+  // The first-ever verified account is permanently connected and can't be
+  // removed — flag it so the app can hide the remove option for it specifically.
+  return accounts.map((acc, i) => ({ ...acc, isPrimary: i === 0 }));
 }
 
 async function removeAccount(userId, id) {
   const record = await prisma.instagramVerification.findFirst({ where: { id, userId, status: 'VERIFIED' } });
   if (!record) throw ApiError.notFound('Connected Instagram account not found');
+
+  // The first Instagram account verified (typically at signup) is
+  // permanent — only accounts added after it can be disconnected.
+  const earliest = await prisma.instagramVerification.findFirst({
+    where: { userId, status: 'VERIFIED' },
+    orderBy: { verifiedAt: 'asc' },
+    select: { id: true },
+  });
+  if (earliest?.id === id) {
+    throw ApiError.forbidden('Your first verified Instagram account cannot be removed');
+  }
+
   await prisma.instagramVerification.update({ where: { id }, data: { status: 'REMOVED' } });
 
   // Signup separately writes the handle onto the profile itself
