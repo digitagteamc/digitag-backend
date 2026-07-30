@@ -34,7 +34,7 @@ const CATEGORIES = [
   { name: "Photography",           slug: "photography",           description: "Product, lifestyle, and portrait photography",          applicableRoles: ["FREELANCER"] },
   { name: "Graphic Design",        slug: "graphic-design",        description: "Branding, illustration, and visual content design",     applicableRoles: ["FREELANCER"] },
   { name: "Content Writing",       slug: "content-writing",       description: "Copywriting, blogs, scripts, and captions",            applicableRoles: ["FREELANCER"] },
-  { name: "Social Media Management", slug: "social-media-management", description: "Social media strategy, management, and growth",    applicableRoles: ["FREELANCER"] },
+  { name: "Social Media Manager",    slug: "social-media-management", description: "Social media strategy, management, and growth",    applicableRoles: ["FREELANCER"] },
   { name: "Music Production",      slug: "music-production",      description: "Original compositions, beats, and audio production",   applicableRoles: ["FREELANCER"] },
 ];
 

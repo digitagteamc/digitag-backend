@@ -29,7 +29,7 @@ const FREELANCER_CATEGORIES = [
   { name: 'Photography',              slug: 'photography',              applicableRoles: ['FREELANCER'] },
   { name: 'Graphic Design',           slug: 'graphic-design',           applicableRoles: ['FREELANCER'] },
   { name: 'Content Writing',          slug: 'content-writing',          applicableRoles: ['FREELANCER'] },
-  { name: 'Social Media Management',  slug: 'social-media-management',  applicableRoles: ['FREELANCER'] },
+  { name: 'Social Media Manager',     slug: 'social-media-management',  applicableRoles: ['FREELANCER'] },
   { name: 'Music Production',         slug: 'music-production',         applicableRoles: ['FREELANCER'] },
 ];
 
