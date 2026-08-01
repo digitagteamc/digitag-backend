@@ -448,6 +448,78 @@ async function getDashboardStats({ from, to } = {}) {
   };
 }
 
+// ─── Signup funnel (where/when users drop off before completing their profile) ─
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+// Buckets a UTC timestamp into a 5-hour IST window (00:00, 05:00, 10:00, 15:00,
+// 20:00 IST) and returns that window's start as a UTC ISO string, so buckets
+// line up with an admin's local (IST) calendar day/hour instead of UTC's.
+function fiveHourBucketStart(date) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const y = ist.getUTCFullYear();
+  const m = ist.getUTCMonth();
+  const d = ist.getUTCDate();
+  const bucketStartHourIst = Math.floor(ist.getUTCHours() / 5) * 5;
+  const bucketStartIst = new Date(Date.UTC(y, m, d, bucketStartHourIst, 0, 0));
+  return new Date(bucketStartIst.getTime() - IST_OFFSET_MS);
+}
+
+async function getSignupFunnel() {
+  const users = await prisma.user.findMany({
+    where: { role: { in: ['CREATOR', 'FREELANCER'] } },
+    select: { id: true, createdAt: true, isProfileCompleted: true, role: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const notCompletedIds = users.filter((u) => !u.isProfileCompleted).map((u) => u.id);
+  const igRows = notCompletedIds.length
+    ? await prisma.instagramVerification.findMany({
+        where: { userId: { in: notCompletedIds } },
+        select: { userId: true, status: true },
+      })
+    : [];
+  // A user can have multiple attempts (expired retries) — VERIFIED wins if any attempt succeeded.
+  const igStatusByUser = new Map();
+  for (const row of igRows) {
+    const current = igStatusByUser.get(row.userId);
+    if (!current || row.status === 'VERIFIED') igStatusByUser.set(row.userId, row.status);
+  }
+
+  const buckets = new Map();
+  for (const user of users) {
+    const bucketStart = fiveHourBucketStart(user.createdAt).toISOString();
+    if (!buckets.has(bucketStart)) {
+      buckets.set(bucketStart, {
+        bucketStart,
+        total: 0,
+        completed: 0,
+        notCompleted: 0,
+        neverStartedInstagram: 0,
+        instagramPendingOrFailed: 0,
+        instagramVerifiedNotCompleted: 0,
+        byRole: { CREATOR: 0, FREELANCER: 0 },
+      });
+    }
+    const bucket = buckets.get(bucketStart);
+    bucket.total += 1;
+    bucket.byRole[user.role] = (bucket.byRole[user.role] || 0) + 1;
+    if (user.isProfileCompleted) {
+      bucket.completed += 1;
+    } else {
+      bucket.notCompleted += 1;
+      const igStatus = igStatusByUser.get(user.id);
+      if (!igStatus) bucket.neverStartedInstagram += 1;
+      else if (igStatus === 'VERIFIED') bucket.instagramVerifiedNotCompleted += 1;
+      else bucket.instagramPendingOrFailed += 1;
+    }
+  }
+
+  return {
+    buckets: Array.from(buckets.values()).sort((a, b) => a.bucketStart.localeCompare(b.bucketStart)),
+  };
+}
+
 // ─── Revenue (Super Admin only) ────────────────────────────────────────────────
 
 // Our DB never stores the plan's price — Razorpay is the source of truth —
@@ -1231,6 +1303,7 @@ module.exports = {
   createAdmin,
   updateAdmin,
   getDashboardStats,
+  getSignupFunnel,
   getRevenueStats,
   listUsers,
   getUserById,
