@@ -416,7 +416,12 @@ async function getDashboardStats({ from, to } = {}) {
     totalCollaborations,
     totalMessages,
   ] = await Promise.all([
-    prisma.user.count({ where: { ...nonAdminFilter, ...dateFilter } }),
+    // "User overview" is the platform's current composition, not activity in
+    // the selected range (that's what "New signups" and "Content &
+    // engagement" below are for) — so totalUsers must NOT apply dateFilter,
+    // or it stops summing to totalCreators + totalFreelancers + totalBrands
+    // (which never did) the moment a range is selected.
+    prisma.user.count({ where: nonAdminFilter }),
     prisma.user.count({ where: { role: 'CREATOR', status: { not: 'DELETED' } } }),
     prisma.user.count({ where: { role: 'FREELANCER', status: { not: 'DELETED' } } }),
     prisma.user.count({ where: { role: 'BRAND', status: { not: 'DELETED' } } }),
