@@ -41,6 +41,12 @@ const statsQuery = Joi.object({
   to: Joi.string().isoDate().optional(),
 });
 
+const droppedOffUsersQuery = Joi.object({
+  from: Joi.string().isoDate().optional(),
+  to: Joi.string().isoDate().optional(),
+  role: Joi.string().valid('CREATOR', 'FREELANCER').optional(),
+});
+
 const blockListQuery = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
@@ -130,6 +136,7 @@ module.exports = {
   collabListQuery,
   reportListQuery,
   statsQuery,
+  droppedOffUsersQuery,
   reviewReport,
   idParam,
   blockListQuery,

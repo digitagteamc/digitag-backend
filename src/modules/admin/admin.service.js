@@ -520,6 +520,68 @@ async function getSignupFunnel() {
   };
 }
 
+// Per-user drop-off list backing the funnel buckets above. A profile row
+// (name, bio, category, etc.) is only ever written once, atomically, when
+// the user finishes the whole signup form — so for anyone who hasn't
+// completed, there's no partial in-form progress stored server-side to
+// report. The two real signals we have are: did they ever attempt Instagram
+// verification (a distinct step before final submit), and how recently were
+// they last active at all (still trying vs. gone quiet).
+async function listDroppedOffUsers({ from, to, role } = {}) {
+  const where = {
+    role: role ? role : { in: ['CREATOR', 'FREELANCER'] },
+    isProfileCompleted: false,
+  };
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt.gte = new Date(from);
+    if (to) where.createdAt.lte = new Date(to);
+  }
+
+  const users = await prisma.user.findMany({
+    where,
+    select: {
+      id: true,
+      mobileNumber: true,
+      countryCode: true,
+      role: true,
+      createdAt: true,
+      lastActiveAt: true,
+      lastLoginAt: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const ids = users.map((u) => u.id);
+  const igRows = ids.length
+    ? await prisma.instagramVerification.findMany({
+        where: { userId: { in: ids } },
+        select: { userId: true, status: true },
+      })
+    : [];
+  const igStatusByUser = new Map();
+  for (const row of igRows) {
+    const current = igStatusByUser.get(row.userId);
+    if (!current || row.status === 'VERIFIED') igStatusByUser.set(row.userId, row.status);
+  }
+
+  const now = Date.now();
+  return users.map((u) => {
+    const lastSeen = u.lastActiveAt || u.lastLoginAt || u.createdAt;
+    return {
+      id: u.id,
+      mobileNumber: u.mobileNumber,
+      countryCode: u.countryCode,
+      role: u.role,
+      signedUpAt: u.createdAt,
+      lastSeenAt: lastSeen,
+      daysSinceSignup: Math.floor((now - u.createdAt.getTime()) / 86400000),
+      daysSinceLastSeen: Math.floor((now - new Date(lastSeen).getTime()) / 86400000),
+      dropOffStage: igStatusByUser.get(u.id) || 'NEVER_STARTED_INSTAGRAM',
+    };
+  });
+}
+
 // ─── Revenue (Super Admin only) ────────────────────────────────────────────────
 
 // Our DB never stores the plan's price — Razorpay is the source of truth —
@@ -1304,6 +1366,7 @@ module.exports = {
   updateAdmin,
   getDashboardStats,
   getSignupFunnel,
+  listDroppedOffUsers,
   getRevenueStats,
   listUsers,
   getUserById,

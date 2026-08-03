@@ -65,6 +65,11 @@ const getSignupFunnel = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
+const getDroppedOffUsers = asyncHandler(async (req, res) => {
+  const data = await service.listDroppedOffUsers(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 const getUsers = asyncHandler(async (req, res) => {
@@ -247,6 +252,7 @@ module.exports = {
   updateAdmin,
   getStats,
   getSignupFunnel,
+  getDroppedOffUsers,
   getRevenueStats,
   getUsers,
   getUser,

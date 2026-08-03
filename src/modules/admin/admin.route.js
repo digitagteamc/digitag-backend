@@ -45,6 +45,8 @@ router.patch('/team/:id', requireSuperAdmin, validateRequest({ params: v.idParam
 router.get('/stats', validateRequest({ query: v.statsQuery }), controller.getStats);
 // GET /admin/signup-funnel — where/when signups drop off, bucketed into 5-hour IST windows
 router.get('/signup-funnel', controller.getSignupFunnel);
+// GET /admin/signup-funnel/users?from=&to=&role= — the individual users behind those buckets
+router.get('/signup-funnel/users', validateRequest({ query: v.droppedOffUsersQuery }), controller.getDroppedOffUsers);
 // GET /admin/revenue — Super Admin only (financial data)
 router.get('/revenue', requireSuperAdmin, controller.getRevenueStats);
 
