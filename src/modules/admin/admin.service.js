@@ -471,8 +471,11 @@ function fiveHourBucketStart(date) {
 }
 
 async function getSignupFunnel() {
+  // Match every other "how many users do we have" stat (Dashboard totalUsers,
+  // Revenue totalSignupsEver): exclude DELETED accounts, or this silently
+  // over-counts vs. the rest of the admin panel and the two never agree.
   const users = await prisma.user.findMany({
-    where: { role: { in: ['CREATOR', 'FREELANCER'] } },
+    where: { role: { in: ['CREATOR', 'FREELANCER'] }, status: { not: 'DELETED' } },
     select: { id: true, createdAt: true, isProfileCompleted: true, role: true },
     orderBy: { createdAt: 'asc' },
   });
@@ -533,8 +536,12 @@ async function getSignupFunnel() {
 // verification (a distinct step before final submit), and how recently were
 // they last active at all (still trying vs. gone quiet).
 async function listDroppedOffUsers({ from, to, role } = {}) {
+  // Exclude DELETED for the same reason as getSignupFunnel above — a deleted
+  // account has no real mobileNumber left to re-engage (tombstoned) and
+  // shouldn't count toward "who dropped off" totals.
   const where = {
     role: role ? role : { in: ['CREATOR', 'FREELANCER'] },
+    status: { not: 'DELETED' },
     isProfileCompleted: false,
   };
   if (from || to) {
