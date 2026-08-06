@@ -32,6 +32,53 @@ async function buildProfileMap(user) {
     };
 }
 
+/**
+ * Finds the User row for (accountId, role), or creates one — atomically
+ * safe against two concurrent requests racing to create the same one (a
+ * double-tap on login, a network retry hitting the server twice, etc).
+ *
+ * Previously each call site here did a plain find-then-create: load the
+ * account's users, check if one matches the role, create one if not. Two
+ * requests arriving milliseconds apart could both see "not found" and both
+ * create a row — two real User rows for the same (account, role), one of
+ * which silently never gets a profile attached to it. Login would then
+ * non-deterministically resolve to either one on any given day, since
+ * nothing ordered which duplicate `.find()`/`findFirst()` returned. That's
+ * exactly what happened to several real accounts (incident: 2026-08-06) —
+ * a completed profile with a same-role "ghost" duplicate sitting next to it,
+ * silently swapped in on login with no warning.
+ *
+ * The fix: create() first, and if a concurrent request already won the race,
+ * the partial unique index on (accountId, role) for non-deleted rows (see
+ * migration 20260806100000_add_user_account_role_unique) turns the loser's
+ * insert into a unique-constraint error (Prisma code P2002) instead of a
+ * second row — caught here and re-fetches the winner instead of duplicating.
+ */
+async function findOrCreateRoleUser(accountId, role, createData) {
+    const existing = await prisma.user.findFirst({
+        where: { accountId, role, status: { not: 'DELETED' } },
+        include: { creatorProfile: true, freelancerProfile: true },
+    });
+    if (existing) return { user: existing, isNewUser: false };
+
+    try {
+        const created = await prisma.user.create({
+            data: { accountId, role, ...createData },
+            include: { creatorProfile: true, freelancerProfile: true },
+        });
+        return { user: created, isNewUser: true };
+    } catch (err) {
+        if (err.code === 'P2002') {
+            const winner = await prisma.user.findFirst({
+                where: { accountId, role, status: { not: 'DELETED' } },
+                include: { creatorProfile: true, freelancerProfile: true },
+            });
+            if (winner) return { user: winner, isNewUser: false };
+        }
+        throw err;
+    }
+}
+
 async function initiateOtp({ mobileNumber, countryCode = '+91', role, categoryId }) {
     let account = await prisma.account.findUnique({
         where: { mobileNumber },
@@ -126,34 +173,22 @@ async function completeOtp({
         });
     }
 
-    let isNewUser = false;
-    let user = account.users ? account.users.find(u => u.role === role) : null;
-
-    if (!user) {
-        user = await prisma.user.create({
-            data: {
-                mobileNumber,
-                countryCode,
-                role,
-                categoryId: categoryId || null,
-                isVerified: true,
-                lastLoginAt: new Date(),
-                accountId: account.id,
-            },
-            include: { creatorProfile: true, freelancerProfile: true },
-        });
-        isNewUser = true;
-    } else {
-        user = await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                isVerified: true,
-                lastLoginAt: new Date(),
-                categoryId: categoryId || user.categoryId,
-            },
-            include: { creatorProfile: true, freelancerProfile: true },
-        });
-    }
+    const { user: foundOrCreated, isNewUser } = await findOrCreateRoleUser(account.id, role, {
+        mobileNumber,
+        countryCode,
+        categoryId: categoryId || null,
+        isVerified: true,
+        lastLoginAt: new Date(),
+    });
+    const user = isNewUser ? foundOrCreated : await prisma.user.update({
+        where: { id: foundOrCreated.id },
+        data: {
+            isVerified: true,
+            lastLoginAt: new Date(),
+            categoryId: categoryId || foundOrCreated.categoryId,
+        },
+        include: { creatorProfile: true, freelancerProfile: true },
+    });
 
     const { accessToken, refreshToken } = await tokenService.issueTokens(user, context);
     const profiles = await buildProfileMap(user);
@@ -234,34 +269,23 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
         });
     }
 
-    let isNewUser = false;
-    let user = account.users ? account.users.find(u => u.role === role) : null;
-
-    if (!user) {
-        user = await prisma.user.create({
-            data: {
-                mobileNumber: number,
-                countryCode,
-                role: role || ROLES.CREATOR,
-                categoryId: categoryId || null,
-                isVerified: true,
-                lastLoginAt: new Date(),
-                accountId: account.id,
-            },
-            include: { creatorProfile: true, freelancerProfile: true },
-        });
-        isNewUser = true;
-    } else {
-        user = await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                isVerified: true,
-                lastLoginAt: new Date(),
-                categoryId: categoryId || user.categoryId,
-            },
-            include: { creatorProfile: true, freelancerProfile: true },
-        });
-    }
+    const targetRole = role || ROLES.CREATOR;
+    const { user: foundOrCreated, isNewUser } = await findOrCreateRoleUser(account.id, targetRole, {
+        mobileNumber: number,
+        countryCode,
+        categoryId: categoryId || null,
+        isVerified: true,
+        lastLoginAt: new Date(),
+    });
+    const user = isNewUser ? foundOrCreated : await prisma.user.update({
+        where: { id: foundOrCreated.id },
+        data: {
+            isVerified: true,
+            lastLoginAt: new Date(),
+            categoryId: categoryId || foundOrCreated.categoryId,
+        },
+        include: { creatorProfile: true, freelancerProfile: true },
+    });
 
     const { accessToken, refreshToken } = await tokenService.issueTokens(user, context);
     const profiles = await buildProfileMap(user);
@@ -357,30 +381,17 @@ async function switchRole(userId, role) {
         });
     }
 
-    let targetUser = await prisma.user.findFirst({
-        where: { accountId, role },
+    const { user: foundOrCreated, isNewUser: targetIsNew } = await findOrCreateRoleUser(accountId, role, {
+        mobileNumber: currentUser.mobileNumber,
+        countryCode: currentUser.countryCode,
+        isVerified: true,
+        lastLoginAt: new Date(),
+    });
+    const targetUser = targetIsNew ? foundOrCreated : await prisma.user.update({
+        where: { id: foundOrCreated.id },
+        data: { lastLoginAt: new Date() },
         include: { creatorProfile: true, freelancerProfile: true }
     });
-
-    if (!targetUser) {
-        targetUser = await prisma.user.create({
-            data: {
-                mobileNumber: currentUser.mobileNumber,
-                countryCode: currentUser.countryCode,
-                role,
-                accountId,
-                isVerified: true,
-                lastLoginAt: new Date(),
-            },
-            include: { creatorProfile: true, freelancerProfile: true }
-        });
-    } else {
-        targetUser = await prisma.user.update({
-            where: { id: targetUser.id },
-            data: { lastLoginAt: new Date() },
-            include: { creatorProfile: true, freelancerProfile: true }
-        });
-    }
 
     const { accessToken, refreshToken } = await tokenService.issueTokens(targetUser);
     const profiles = await buildProfileMap(targetUser);
