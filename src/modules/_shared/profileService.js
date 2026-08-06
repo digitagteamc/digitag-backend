@@ -32,10 +32,19 @@ function buildProfileService({ model, role }) {
     return user;
   }
 
-  async function ensureEmailAvailable(userId, email) {
+  // Block if this email is already used under a genuinely different account
+  // (different phone number) — but a sibling role-profile of the SAME account
+  // (same person, switched roles via the multi-profile feature) isn't
+  // "another" user, so exclude the whole account's users, not just this one
+  // row, when we know the account. Same pattern as Instagram/YouTube/Facebook
+  // verification.
+  async function ensureEmailAvailable(userId, email, accountId) {
     if (!email) return;
     const existing = await delegate().findFirst({
-      where: { email, NOT: { userId } },
+      where: {
+        email,
+        NOT: accountId ? { user: { accountId } } : { userId },
+      },
       select: { id: true },
     });
     if (existing) throw ApiError.conflict(MESSAGES.PROFILE.EMAIL_IN_USE);
@@ -47,7 +56,7 @@ function buildProfileService({ model, role }) {
     const existing = await delegate().findUnique({ where: { userId } });
     if (existing) throw ApiError.conflict(MESSAGES.PROFILE.ALREADY_EXISTS);
 
-    if (data.email) await ensureEmailAvailable(userId, data.email);
+    if (data.email) await ensureEmailAvailable(userId, data.email, user.accountId);
 
     const tagId = await generateTagId({ role, model });
 
@@ -62,12 +71,12 @@ function buildProfileService({ model, role }) {
   }
 
   async function updateProfile(userId, data) {
-    await ensureUserRole(userId);
+    const user = await ensureUserRole(userId);
 
     const existing = await delegate().findUnique({ where: { userId } });
     if (!existing) throw ApiError.notFound(MESSAGES.PROFILE.NOT_FOUND);
 
-    if (data.email) await ensureEmailAvailable(userId, data.email);
+    if (data.email) await ensureEmailAvailable(userId, data.email, user.accountId);
 
     const profile = await delegate().update({ where: { userId }, data });
 
