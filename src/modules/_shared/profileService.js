@@ -88,15 +88,26 @@ function buildProfileService({ model, role }) {
     for (const field of sharedFields) {
       if (data[field] !== undefined) sharedUpdate[field] = data[field];
     }
-    if (Object.keys(sharedUpdate).length > 0) {
-      const otherProfile = await prisma[otherModel].findUnique({ where: { userId } });
-      if (otherProfile) {
-        try {
-          await prisma[otherModel].update({ where: { userId }, data: sharedUpdate });
-        } catch {
-          // Likely an email unique-constraint clash with a different user's row in
-          // the other role's table — don't let a cosmetic sync failure break the
-          // primary profile update that the user is actually waiting on.
+    if (Object.keys(sharedUpdate).length > 0 && user.accountId) {
+      // The other role lives on a *different* User row under the same
+      // Account (that's the whole point of the multi-profile feature) — the
+      // sibling profile's userId is that other row's id, never this one, so
+      // it has to be looked up via accountId first.
+      const otherRole = role === 'CREATOR' ? 'FREELANCER' : 'CREATOR';
+      const otherUser = await prisma.user.findFirst({
+        where: { accountId: user.accountId, role: otherRole, status: { not: 'DELETED' } },
+        select: { id: true },
+      });
+      if (otherUser) {
+        const otherProfile = await prisma[otherModel].findUnique({ where: { userId: otherUser.id } });
+        if (otherProfile) {
+          try {
+            await prisma[otherModel].update({ where: { userId: otherUser.id }, data: sharedUpdate });
+          } catch {
+            // Likely an email unique-constraint clash with a different user's row in
+            // the other role's table — don't let a cosmetic sync failure break the
+            // primary profile update that the user is actually waiting on.
+          }
         }
       }
     }
