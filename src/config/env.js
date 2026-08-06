@@ -68,6 +68,7 @@ const env = {
     windowMs: toInt(process.env.RATE_LIMIT_WINDOW_MS, 60 * 1000), // 1-minute window
     max: toInt(process.env.RATE_LIMIT_MAX, 120),                   // 120 req/min per IP
     otpMax: toInt(process.env.OTP_RATE_LIMIT_MAX, 3),              // 3 OTP sends/min
+    emailOtpMax: toInt(process.env.EMAIL_OTP_RATE_LIMIT_MAX, 3),   // 3 email OTP sends/min
   },
 
   LOG_LEVEL: optional('LOG_LEVEL', 'info'),
@@ -133,6 +134,18 @@ const env = {
     bundleId: optional('APPLE_VOIP_BUNDLE_ID'),
     production: optional('APPLE_VOIP_PRODUCTION') === 'true',
   },
+
+  // Email verification (signup) — EMAIL_PROVIDER stays 'mock' (logs the code,
+  // no real send) until a real provider is configured. 'resend' needs
+  // RESEND_API_KEY; 'ses' reuses the AWS.region/accessKeyId/secretAccessKey
+  // above (same account as S3) plus its own verified sending identity.
+  EMAIL_PROVIDER: optional('EMAIL_PROVIDER', 'mock'),
+  EMAIL_FROM: optional('EMAIL_FROM', 'DigiTag <verify@thedigitag.ai>'),
+  RESEND_API_KEY: optional('RESEND_API_KEY'),
+  EMAIL_OTP_LENGTH: toInt(process.env.EMAIL_OTP_LENGTH, 6),
+  EMAIL_OTP_EXPIRY_MINUTES: toInt(process.env.EMAIL_OTP_EXPIRY_MINUTES, 10),
+  EMAIL_OTP_MAX_ATTEMPTS: toInt(process.env.EMAIL_OTP_MAX_ATTEMPTS, 5),
+  EMAIL_OTP_RESEND_COOLDOWN_SECONDS: toInt(process.env.EMAIL_OTP_RESEND_COOLDOWN_SECONDS, 30),
 
   // Remote kill switch for the whole Premium surface (Upgrade button, Who
   // Viewed My Profile, Boost) — the app reads this from GET /config on

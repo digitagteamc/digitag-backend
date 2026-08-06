@@ -81,6 +81,13 @@ enum SocialVerificationStatus {
   FAILED
 }
 
+enum EmailVerificationStatus {
+  PENDING
+  VERIFIED
+  EXPIRED
+  FAILED
+}
+
 enum ExperienceLevel {
   BEGINNER
   INTERMEDIATE
@@ -188,6 +195,7 @@ model User {
   subscription           Subscription?
   instagramVerifications InstagramVerification[]
   socialVerifications    SocialVerification[]
+  emailVerifications     EmailVerification[]
   callerCalls            Call[]                  @relation("CallCaller")
   calleeCalls            Call[]                  @relation("CallCallee")
   reports                Report[]                @relation("ReportReporter")
@@ -202,6 +210,7 @@ model User {
   @@index([mobileNumber])
   @@index([status])
   @@index([createdAt])
+  @@index([accountId])
 }
 
 // -------------------------
@@ -623,6 +632,31 @@ model SocialVerification {
 
   @@unique([platform, socialAccountId])
   @@index([userId, platform, status])
+}
+
+// -------------------------
+// Email verification — signup requires a verified email; the code is sent
+// to the address itself (not tied to a profile row yet), so this can run
+// before a CreatorProfile/FreelancerProfile exists. The submitting profile
+// endpoint checks for a VERIFIED row matching (userId, email) at save time.
+// -------------------------
+model EmailVerification {
+  id             String                   @id @default(uuid())
+  userId         String
+  email          String
+  codeHash       String
+  status         EmailVerificationStatus  @default(PENDING)
+  attempts       Int                      @default(0)
+  failureReason  String?
+  expiresAt      DateTime
+  verifiedAt     DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, email, status])
+  @@index([expiresAt])
 }
 
 // -------------------------
