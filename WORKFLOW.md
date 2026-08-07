@@ -7,6 +7,7 @@
 - `feature/<short-name>` — new functionality
 - `fix/<short-name>` — bug fixes
 - `hotfix/<short-name>` — same as `fix`, just signals "urgent, review fast"
+- `incomplete` — work that's finished as code but deliberately not ready to merge yet (e.g. a backend change gated on a mobile release going live first). Lives here instead of as uncommitted local changes, so it's visible and can't be accidentally lost. Not a PR — nothing to review yet. When it's actually ready, branch a normal `feature`/`fix` off it (or just `git merge main` into it to catch up, then open the PR).
 
 No `develop` branch, no release branches — `main` *is* the release line. A deploy is a deliberate, separate action (see below), not something that happens automatically on merge.
 
