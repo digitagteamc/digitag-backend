@@ -423,6 +423,10 @@ async function getDashboardStats({ from, to } = {}) {
     totalMessages,
     totalCompletedProfiles,
     totalIncompleteProfiles,
+    completedCreators,
+    completedFreelancers,
+    incompleteCreators,
+    incompleteFreelancers,
   ] = await Promise.all([
     // "User overview" is the platform's current composition, not activity in
     // the selected range (that's what "New signups" and "Content &
@@ -444,6 +448,10 @@ async function getDashboardStats({ from, to } = {}) {
     prisma.message.count({ where: { ...dateFilter } }),
     prisma.user.count({ where: { ...profileRoleFilter, isProfileCompleted: true } }),
     prisma.user.count({ where: { ...profileRoleFilter, isProfileCompleted: false } }),
+    prisma.user.count({ where: { role: 'CREATOR', status: { not: 'DELETED' }, isProfileCompleted: true } }),
+    prisma.user.count({ where: { role: 'FREELANCER', status: { not: 'DELETED' }, isProfileCompleted: true } }),
+    prisma.user.count({ where: { role: 'CREATOR', status: { not: 'DELETED' }, isProfileCompleted: false } }),
+    prisma.user.count({ where: { role: 'FREELANCER', status: { not: 'DELETED' }, isProfileCompleted: false } }),
   ]);
 
   return {
@@ -462,6 +470,10 @@ async function getDashboardStats({ from, to } = {}) {
     totalMessages,
     totalCompletedProfiles,
     totalIncompleteProfiles,
+    completedCreators,
+    completedFreelancers,
+    incompleteCreators,
+    incompleteFreelancers,
   };
 }
 
