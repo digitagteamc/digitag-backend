@@ -87,13 +87,17 @@ async function initiateOtp({ mobileNumber, countryCode = '+91', role, categoryId
 
     let user = null;
     if (account && account.users.length > 0) {
-        user = account.users.find(u => u.role === role) || account.users[0];
+        // Prefer a live (non-deleted) user, matching role if possible — a
+        // DELETED row must not be picked as "the" user here, or a since-
+        // deleted role would wrongly gate a fresh signup attempt below.
+        const liveUsers = account.users.filter(u => u.status !== 'DELETED');
+        user = liveUsers.find(u => u.role === role) || liveUsers[0] || null;
     } else {
         user = await prisma.user.findFirst({ where: { mobileNumber } });
     }
 
     if (user) {
-        if (user.status === 'SUSPENDED' || user.status === 'DELETED') {
+        if (user.status === 'SUSPENDED') {
             throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
         }
         // NOTE: we intentionally no longer reject when the stored `role` differs
@@ -235,7 +239,11 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
     });
 
     if (account) {
-        const suspendedUser = account.users.find(u => u.status === 'SUSPENDED' || u.status === 'DELETED');
+        // DELETED is not a ban — admins delete accounts (e.g. clearing test
+        // data) via a separate action from suspendUser, and that number must
+        // still be able to sign up fresh afterward. Only an active SUSPENDED
+        // row blocks login.
+        const suspendedUser = account.users.find(u => u.status === 'SUSPENDED');
         if (suspendedUser) {
             throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
         }
@@ -245,7 +253,7 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
             include: { creatorProfile: true, freelancerProfile: true }
         });
 
-        if (legacyUser && (legacyUser.status === 'SUSPENDED' || legacyUser.status === 'DELETED')) {
+        if (legacyUser && legacyUser.status === 'SUSPENDED') {
             throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
         }
 
