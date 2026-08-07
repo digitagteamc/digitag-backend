@@ -531,6 +531,8 @@ async function getSignupFunnel() {
         instagramPendingOrFailed: 0,
         instagramVerifiedNotCompleted: 0,
         byRole: { CREATOR: 0, FREELANCER: 0 },
+        completedByRole: { CREATOR: 0, FREELANCER: 0 },
+        notCompletedByRole: { CREATOR: 0, FREELANCER: 0 },
       });
     }
     const bucket = buckets.get(bucketStart);
@@ -538,8 +540,10 @@ async function getSignupFunnel() {
     bucket.byRole[user.role] = (bucket.byRole[user.role] || 0) + 1;
     if (user.isProfileCompleted) {
       bucket.completed += 1;
+      bucket.completedByRole[user.role] = (bucket.completedByRole[user.role] || 0) + 1;
     } else {
       bucket.notCompleted += 1;
+      bucket.notCompletedByRole[user.role] = (bucket.notCompletedByRole[user.role] || 0) + 1;
       const igStatus = igStatusByUser.get(user.id);
       if (!igStatus) bucket.neverStartedInstagram += 1;
       else if (igStatus === 'VERIFIED') bucket.instagramVerifiedNotCompleted += 1;
