@@ -401,6 +401,12 @@ async function getDashboardStats({ from, to } = {}) {
 
   const nonAdminFilter = { role: { not: 'ADMIN' }, status: { not: 'DELETED' } };
 
+  // Scoped to CREATOR/FREELANCER, same as the signup funnel below —
+  // isProfileCompleted isn't a meaningful signal for BRAND yet (no profile
+  // model exists for it), so including that role would just inflate
+  // "incomplete" with users who were never in this funnel to begin with.
+  const profileRoleFilter = { role: { in: ['CREATOR', 'FREELANCER'] }, status: { not: 'DELETED' } };
+
   const [
     totalUsers,
     totalCreators,
@@ -415,6 +421,8 @@ async function getDashboardStats({ from, to } = {}) {
     suspendedAccounts,
     totalCollaborations,
     totalMessages,
+    totalCompletedProfiles,
+    totalIncompleteProfiles,
   ] = await Promise.all([
     // "User overview" is the platform's current composition, not activity in
     // the selected range (that's what "New signups" and "Content &
@@ -434,6 +442,8 @@ async function getDashboardStats({ from, to } = {}) {
     prisma.user.count({ where: { status: 'SUSPENDED' } }),
     prisma.collaboration.count({ where: { ...dateFilter } }),
     prisma.message.count({ where: { ...dateFilter } }),
+    prisma.user.count({ where: { ...profileRoleFilter, isProfileCompleted: true } }),
+    prisma.user.count({ where: { ...profileRoleFilter, isProfileCompleted: false } }),
   ]);
 
   return {
@@ -450,6 +460,8 @@ async function getDashboardStats({ from, to } = {}) {
     suspendedAccounts,
     totalCollaborations,
     totalMessages,
+    totalCompletedProfiles,
+    totalIncompleteProfiles,
   };
 }
 
