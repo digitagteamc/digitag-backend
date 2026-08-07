@@ -114,6 +114,7 @@ async function listSuggestions(userId, { limit = 20 } = {}) {
     where: {
       role: { in: targetRoles },
       status: 'ACTIVE',
+      isProfileCompleted: true,
       id: { notIn: Array.from(excludeIds) },
     },
     orderBy: { createdAt: 'desc' },
