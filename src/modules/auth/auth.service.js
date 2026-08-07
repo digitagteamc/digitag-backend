@@ -184,6 +184,12 @@ async function completeOtp({
         isVerified: true,
         lastLoginAt: new Date(),
     });
+    // findOrCreateRoleUser already excludes DELETED when resolving an
+    // existing row, but never filters SUSPENDED — unlike verifyFirebaseToken/
+    // initiateOtp, this path had no suspension check at all before now.
+    if (!isNewUser && foundOrCreated.status === 'SUSPENDED') {
+        throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
+    }
     const user = isNewUser ? foundOrCreated : await prisma.user.update({
         where: { id: foundOrCreated.id },
         data: {
