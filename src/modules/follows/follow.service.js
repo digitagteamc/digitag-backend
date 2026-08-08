@@ -3,6 +3,7 @@ const { ApiError } = require('../../utils/apiResponse');
 const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
 const { assertNotBlocked, isBlockedBetween } = require('../blocks/block.service');
 const push = require('../../services/push/push.service');
+const categoryService = require('../categories/category.service');
 
 const userInclude = {
   select: {
@@ -10,14 +11,17 @@ const userInclude = {
     role: true,
     mobileNumber: true,
     isPremium: true,
-    creatorProfile: { select: { name: true, profilePicture: true, location: true, bio: true } },
-    freelancerProfile: { select: { name: true, profilePicture: true, location: true, bio: true } },
+    creatorProfile: { select: { name: true, profilePicture: true, location: true, bio: true, categories: true } },
+    freelancerProfile: { select: { name: true, profilePicture: true, location: true, bio: true, categories: true } },
   },
 };
 
-function shapeUser(u) {
+function shapeUser(u, categoryMap) {
   if (!u) return null;
   const profile = u.creatorProfile || u.freelancerProfile;
+  const categoryNames = categoryMap
+    ? (profile?.categories || []).map((cid) => categoryMap.get(cid)?.name).filter(Boolean)
+    : [];
   return {
     id: u.id,
     role: u.role,
@@ -26,6 +30,7 @@ function shapeUser(u) {
     location: profile ? profile.location : null,
     bio: profile ? profile.bio : null,
     isPremium: Boolean(u.isPremium),
+    categoryNames,
   };
 }
 
@@ -121,7 +126,14 @@ async function listSuggestions(userId, { limit = 20 } = {}) {
     ...userInclude,
   });
 
-  return candidates.map(shapeUser);
+  // Profiles store `categories` as raw Category-table UUIDs — resolve them to
+  // names so the suggestion cards can show what the person does instead of a
+  // generic "Suggested for you" caption.
+  const categoryMap = await categoryService.resolveCategoryMap(
+    candidates.flatMap((c) => (c.creatorProfile || c.freelancerProfile)?.categories || []),
+  );
+
+  return candidates.map((c) => shapeUser(c, categoryMap));
 }
 
 async function status(followerId, followingId) {
