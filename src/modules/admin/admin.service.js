@@ -790,9 +790,29 @@ function toCsv(rows, columns) {
   return `${header}\n${body}`;
 }
 
-async function exportUsersCsv() {
+async function exportUsersCsv(query = {}) {
+  const { role, status, search } = query;
+
+  // Same filter-building as listUsers, so "download" always matches whatever
+  // the admin currently has filtered/searched on the Users screen.
+  const where = {};
+  where.role = role ? role : { not: 'ADMIN' };
+  if (status === 'active') where.status = 'ACTIVE';
+  else if (status === 'suspended') where.status = 'SUSPENDED';
+  else if (status === 'deleted') where.status = 'DELETED';
+  else where.status = { not: 'DELETED' };
+  if (search) {
+    where.OR = [
+      { mobileNumber: { contains: search } },
+      { creatorProfile: { name: { contains: search, mode: 'insensitive' } } },
+      { creatorProfile: { email: { contains: search, mode: 'insensitive' } } },
+      { freelancerProfile: { name: { contains: search, mode: 'insensitive' } } },
+      { freelancerProfile: { email: { contains: search, mode: 'insensitive' } } },
+    ];
+  }
+
   const users = await prisma.user.findMany({
-    where: { role: { not: 'ADMIN' }, status: { not: 'DELETED' } },
+    where,
     orderBy: { createdAt: 'desc' },
     include: { creatorProfile: { select: { name: true, email: true } }, freelancerProfile: { select: { name: true, email: true } } },
   });

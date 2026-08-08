@@ -103,7 +103,7 @@ const bulkSuspendUsers = asyncHandler(async (req, res) => {
 });
 
 const exportUsersCsv = asyncHandler(async (req, res) => {
-  const csv = await service.exportUsersCsv();
+  const csv = await service.exportUsersCsv(req.query);
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="digitag-users.csv"');
   res.send(csv);
