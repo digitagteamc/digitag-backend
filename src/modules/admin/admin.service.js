@@ -814,17 +814,41 @@ async function exportUsersCsv(query = {}) {
   const users = await prisma.user.findMany({
     where,
     orderBy: { createdAt: 'desc' },
-    include: { creatorProfile: { select: { name: true, email: true } }, freelancerProfile: { select: { name: true, email: true } } },
+    include: userBaseInclude(),
   });
-  return toCsv(users, [
+  const categoryMap = await resolveUserCategories(users);
+
+  const baseColumns = [
     { label: 'Name', get: (u) => u.creatorProfile?.name || u.freelancerProfile?.name || '' },
     { label: 'Email', get: (u) => u.creatorProfile?.email || u.freelancerProfile?.email || '' },
     { label: 'Phone', get: (u) => `${u.countryCode}${u.mobileNumber}` },
+    { label: 'DigiTag', get: (u) => shapeDigiTag(u) || '' },
     { label: 'Role', get: (u) => u.role },
     { label: 'Status', get: (u) => u.status },
-    { label: 'Premium', get: (u) => (u.isPremium ? 'Yes' : 'No') },
-    { label: 'Joined', get: (u) => u.createdAt.toISOString() },
-  ]);
+  ];
+
+  // Match whatever columns that role's own admin table shows, on top of the
+  // shared identity columns above — same fields, same source (shapeCreator/
+  // shapeFreelancer), so the export is never missing what's visible on screen.
+  let roleColumns = [];
+  if (role === 'FREELANCER') {
+    roleColumns = [
+      { label: 'Skills', get: (u) => (u.freelancerProfile?.skills || []).join('; ') },
+      { label: 'Category', get: (u) => shapeProfileCategories(u.freelancerProfile, categoryMap).join('; ') },
+      { label: 'Experience', get: (u) => u.freelancerProfile?.experienceLevel || '' },
+      { label: 'Location', get: (u) => u.freelancerProfile?.location || '' },
+    ];
+  } else if (role === 'CREATOR') {
+    roleColumns = [
+      { label: 'Category', get: (u) => shapeProfileCategories(u.creatorProfile, categoryMap).join('; ') },
+      { label: 'Location', get: (u) => u.creatorProfile?.location || '' },
+      { label: 'Followers', get: (u) => u.creatorProfile?.instagramFollowers || 0 },
+    ];
+  } else {
+    roleColumns = [{ label: 'Premium', get: (u) => (u.isPremium ? 'Yes' : 'No') }];
+  }
+
+  return toCsv(users, [...baseColumns, ...roleColumns, { label: 'Joined', get: (u) => u.createdAt.toISOString() }]);
 }
 
 // ─── Creators ─────────────────────────────────────────────────────────────────
