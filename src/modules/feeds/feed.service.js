@@ -18,7 +18,7 @@ const FEED_TTL = 90;
 // just because we can't classify it.
 const POST_CATEGORY_TO_FREELANCER_SLUGS = {
   'Photography': ['photography'],
-  'Editors': ['editors', 'video-editing'],
+  'Editor': ['editors', 'video-editing'],
   'Videography': ['editors', 'video-editing'],
   'Growth Specialist': ['social-media'],
   'Script Writers': ['content-writing'],
