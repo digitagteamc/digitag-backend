@@ -132,6 +132,19 @@ router.post('/categories', requireSuperAdmin, validateRequest({ body: v.createCa
 // PATCH /admin/categories/:id
 router.patch('/categories/:id', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.updateCategory }), controller.updateCategory);
 
+// Brand Home content catalogs — same list-any-admin, write-super-admin-only split as Categories
+router.get('/youtube-channels', validateRequest({ query: v.catalogListQuery }), controller.getYoutubeChannelsAdmin);
+router.post('/youtube-channels', requireSuperAdmin, validateRequest({ body: v.createYoutubeChannel }), controller.createYoutubeChannel);
+router.patch('/youtube-channels/:id', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.updateYoutubeChannel }), controller.updateYoutubeChannel);
+
+router.get('/ad-types', validateRequest({ query: v.catalogListQuery }), controller.getAdTypesAdmin);
+router.post('/ad-types', requireSuperAdmin, validateRequest({ body: v.createAdType }), controller.createAdType);
+router.patch('/ad-types/:id', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.updateAdType }), controller.updateAdType);
+
+router.get('/celebrities', validateRequest({ query: v.catalogListQuery }), controller.getCelebritiesAdmin);
+router.post('/celebrities', requireSuperAdmin, validateRequest({ body: v.createCelebrity }), controller.createCelebrity);
+router.patch('/celebrities/:id', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.updateCelebrity }), controller.updateCelebrity);
+
 // Broadcast — Super Admin only (reaches every user's device at once)
 // POST /admin/broadcast  { title, body, target }
 router.post('/broadcast', requireSuperAdmin, validateRequest({ body: v.broadcast }), controller.broadcast);

@@ -182,6 +182,7 @@ model User {
   creatorProfile    CreatorProfile?
   freelancerProfile FreelancerProfile?
   brandProfile      BrandProfile?
+  brandRequirements BrandRequirement[]
   posts             Post[]
   refreshTokens     RefreshToken[]
   otps              Otp[]
@@ -344,6 +345,96 @@ model BrandProfile {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([approvalStatus])
+}
+
+// -------------------------
+// Brand Home tab content — admin-curated catalogs (YouTube Channels, Ad
+// Types, Celebrities) shown to Brand users for discovery. Same shape/pattern
+// as Category: public read, admin-only write.
+// -------------------------
+model YoutubeChannel {
+  id              String   @id @default(uuid())
+  name            String
+  logoUrl         String?
+  subscriberCount Int      @default(0)
+  // Free-text tag, not a Category FK — this is YouTube's own genre taxonomy
+  // (News, Entertainment, Podcast, Tech, Education...), a different set than
+  // the app's Creator/Freelancer categories.
+  category        String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([category])
+}
+
+model AdType {
+  id          String   @id @default(uuid())
+  name        String
+  iconUrl     String?
+  accentColor String? // hex, e.g. "#7352DD" — matches each tile's own border/accent in the mock
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model Celebrity {
+  id             String   @id @default(uuid())
+  name           String
+  photoUrl       String?
+  role           String? // e.g. "Actor", "Singer", "Comedian" — free text, not an enum (open-ended)
+  followerCount  Int      @default(0)
+  isVerified     Boolean  @default(false)
+  profileUrl     String? // what "View Profile" opens
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+// -------------------------
+// Brand requirement posting ("Who are you looking for?") — a Brand's own
+// compose+publish flow, distinct from Post: Post is free-text only, this
+// needs structured targeting fields no existing model has.
+// -------------------------
+enum BrandRequirementTargetType {
+  CREATORS
+  AGENCIES
+}
+
+enum BrandRequirementStatus {
+  ACTIVE
+  CLOSED
+}
+
+model BrandRequirement {
+  id               String                      @id @default(uuid())
+  brandUserId      String
+  targetType       BrandRequirementTargetType  @default(CREATORS)
+  category         String?
+  creatorCountMin  Int?
+  creatorCountMax  Int?
+  genderPreference String?
+  deliverables     String?
+  // Visibility scope, e.g. "CREATORS_ONLY" — mirrors the "Visible Only to
+  // creators" line in the mock; free text for now, no fixed set confirmed yet.
+  visibility       String?
+  message          String?
+  status           BrandRequirementStatus     @default(ACTIVE)
+  viewCount        Int                         @default(0)
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
+
+  brandUser User @relation(fields: [brandUserId], references: [id], onDelete: Cascade)
+
+  @@index([brandUserId])
+  @@index([status])
 }
 
 // -------------------------
