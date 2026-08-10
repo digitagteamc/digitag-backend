@@ -97,6 +97,23 @@ const deleteUser = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.ADMIN.USER_DELETED, data });
 });
 
+// ─── Brand approval ───────────────────────────────────────────────────────────
+
+const getPendingBrands = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listPendingBrands(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const approveBrand = asyncHandler(async (req, res) => {
+  const data = await service.approveBrand(req.admin.id, req.admin.name, req.params.id);
+  return success(res, { message: 'Brand approved', data });
+});
+
+const rejectBrand = asyncHandler(async (req, res) => {
+  const data = await service.rejectBrand(req.admin.id, req.admin.name, req.params.id, req.body.reason);
+  return success(res, { message: 'Brand rejected', data });
+});
+
 const bulkSuspendUsers = asyncHandler(async (req, res) => {
   const data = await service.bulkSuspendUsers(req.admin.id, req.admin.name, req.body.userIds);
   return success(res, { message: 'Users suspended', data });
@@ -259,6 +276,9 @@ module.exports = {
   suspendUser,
   unsuspendUser,
   deleteUser,
+  getPendingBrands,
+  approveBrand,
+  rejectBrand,
   bulkSuspendUsers,
   exportUsersCsv,
   getCreators,

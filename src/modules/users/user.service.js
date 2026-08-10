@@ -123,11 +123,15 @@ async function getUserById(id, viewerId) {
 async function recomputeProfileCompletion(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { creatorProfile: true, freelancerProfile: true },
+    include: { creatorProfile: true, freelancerProfile: true, brandProfile: true },
   });
   if (!user) return false;
 
-  const profile = user.role === ROLES.CREATOR ? user.creatorProfile : user.freelancerProfile;
+  const profile = user.role === ROLES.CREATOR
+    ? user.creatorProfile
+    : user.role === ROLES.BRAND
+      ? user.brandProfile
+      : user.freelancerProfile;
   // A profile counts as complete once the user has given a name. Category is
   // optional at signup; selectors can populate it later without re-gating the UX.
   const isCompleted = Boolean(profile && profile.name);

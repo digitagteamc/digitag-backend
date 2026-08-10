@@ -66,6 +66,14 @@ router.post('/users/:id/unsuspend', requireSuperAdmin, validateRequest({ params:
 // DELETE /admin/users/:id
 router.delete('/users/:id', requireSuperAdmin, validateRequest({ params: v.idParam }), controller.deleteUser);
 
+// Brand approval
+// GET /admin/brands/pending?page=&limit=
+router.get('/brands/pending', validateRequest({ query: v.pendingBrandsQuery }), controller.getPendingBrands);
+// POST /admin/brands/:id/approve — Super Admin only, same trust-level as suspend/delete
+router.post('/brands/:id/approve', requireSuperAdmin, validateRequest({ params: v.idParam }), controller.approveBrand);
+// POST /admin/brands/:id/reject
+router.post('/brands/:id/reject', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.rejectBrand }), controller.rejectBrand);
+
 // Creators
 // GET /admin/creators?page=&limit=&search=
 router.get('/creators', validateRequest({ query: v.listQuery }), controller.getCreators);

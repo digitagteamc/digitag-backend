@@ -8,6 +8,7 @@ const push = require('../../services/push/push.service');
 const { isBlockedBetween } = require('../blocks/block.service');
 const logger = require('../../utils/logger');
 const categoryService = require('../categories/category.service');
+const { assertBrandApproved } = require('../brands/brand.service');
 
 // Lazy require to avoid a circular dependency — feed.service.js requires post.service.js
 // for buildPostInclude/shapePost, so loading invalidateAllFeeds at the top here would grab
@@ -139,6 +140,8 @@ function boostHoursToExpiresAt(boostHours) {
 }
 
 async function createPost(user, data) {
+  await assertBrandApproved(user.id, user.role);
+
   const post = await prisma.post.create({
     data: {
       userId: user.id,

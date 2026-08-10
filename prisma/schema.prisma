@@ -95,6 +95,12 @@ enum ExperienceLevel {
   EXPERT
 }
 
+enum BrandApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum FreelancerAvailability {
   AVAILABLE
   BUSY
@@ -175,6 +181,7 @@ model User {
   category          Category?          @relation(fields: [categoryId], references: [id])
   creatorProfile    CreatorProfile?
   freelancerProfile FreelancerProfile?
+  brandProfile      BrandProfile?
   posts             Post[]
   refreshTokens     RefreshToken[]
   otps              Otp[]
@@ -302,6 +309,41 @@ model FreelancerProfile {
 
   @@index([categoryId])
   @@index([availability])
+}
+
+// -------------------------
+// Brand profile — companies/brands sourcing collaborations. Unlike Creator/
+// Freelancer, a Brand only goes live after admin review (PAN/GSTIN implies a
+// real business, not just a content profile) — approvalStatus is a separate
+// gate from profile completeness, checked at post/collaboration-create time.
+// -------------------------
+model BrandProfile {
+  id                String              @id @default(uuid())
+  userId            String              @unique
+  // Company/brand name — deliberately called `name`, not `companyName`, to
+  // match every other profile's shared-identity field so generic owner-name
+  // code (shapeUser, post cards, etc.) works on Brand without special-casing.
+  name              String?
+  email             String?             @unique
+  profilePicture    String?
+  profilePictureKey String?
+  bio               String?
+  location          String?
+  pan               String?
+  gstin             String?
+  city              String?
+  state             String?
+  website           String?
+  tagId             String?             @unique
+  approvalStatus    BrandApprovalStatus @default(PENDING)
+  rejectionReason   String?
+  reviewedAt        DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([approvalStatus])
 }
 
 // -------------------------
