@@ -196,7 +196,7 @@ function shapeChatThread(convo) {
     id: convo.id,
     participantA: nameA,
     participantB: nameB,
-    lastMessage: lastMsg?.content || '',
+    lastMessage: lastMsg?.content || (lastMsg?.imageUrl ? '📷 Photo' : ''),
     lastActivity: (convo.lastMessageAt || convo.createdAt).toISOString(),
     messageCount: convo._count?.messages ?? convo.messages?.length ?? 0,
     messages: (convo.messages || []).map((m) => ({
@@ -204,6 +204,7 @@ function shapeChatThread(convo) {
       from: m.senderId === convo.participantAId ? nameA : nameB,
       to: m.senderId === convo.participantAId ? nameB : nameA,
       text: m.content,
+      imageUrl: m.imageUrl || null,
       sentAt: m.createdAt.toISOString(),
     })),
   };
