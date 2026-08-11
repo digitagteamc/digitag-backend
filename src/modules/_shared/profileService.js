@@ -4,6 +4,7 @@ const MESSAGES = require('../../constants/messages');
 const userService = require('../users/user.service');
 const { generateTagId } = require('../../utils/generateTagId');
 const { ensureUserTag } = require('../../utils/generateUserTag');
+const { isEmailVerifiedForUser } = require('../../services/email/emailOtp.service');
 
 async function attachInstagramAccounts(profile) {
   const instagramAccounts = await prisma.instagramVerification.findMany({
@@ -50,13 +51,23 @@ function buildProfileService({ model, role }) {
     if (existing) throw ApiError.conflict(MESSAGES.PROFILE.EMAIL_IN_USE);
   }
 
+  async function ensureEmailVerified(userId, email) {
+    const verified = await isEmailVerifiedForUser(userId, email);
+    if (!verified) {
+      throw ApiError.badRequest('Please verify this email address before continuing.');
+    }
+  }
+
   async function createProfile(userId, data) {
     const user = await ensureUserRole(userId);
 
     const existing = await delegate().findUnique({ where: { userId } });
     if (existing) throw ApiError.conflict(MESSAGES.PROFILE.ALREADY_EXISTS);
 
-    if (data.email) await ensureEmailAvailable(userId, data.email, user.accountId);
+    if (data.email) {
+      await ensureEmailAvailable(userId, data.email, user.accountId);
+      await ensureEmailVerified(userId, data.email);
+    }
 
     const tagId = await generateTagId({ role, model });
 
@@ -76,7 +87,13 @@ function buildProfileService({ model, role }) {
     const existing = await delegate().findUnique({ where: { userId } });
     if (!existing) throw ApiError.notFound(MESSAGES.PROFILE.NOT_FOUND);
 
-    if (data.email) await ensureEmailAvailable(userId, data.email, user.accountId);
+    if (data.email) {
+      await ensureEmailAvailable(userId, data.email, user.accountId);
+      // Only re-verify when the email actually changed — an unrelated
+      // profile edit (e.g. bio) shouldn't force re-verification of an
+      // already-verified, unchanged address.
+      if (data.email !== existing.email) await ensureEmailVerified(userId, data.email);
+    }
 
     const profile = await delegate().update({ where: { userId }, data });
 
