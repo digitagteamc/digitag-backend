@@ -431,7 +431,8 @@ model BrandRequirement {
   createdAt        DateTime                    @default(now())
   updatedAt        DateTime                    @updatedAt
 
-  brandUser User @relation(fields: [brandUserId], references: [id], onDelete: Cascade)
+  brandUser     User            @relation(fields: [brandUserId], references: [id], onDelete: Cascade)
+  collaborations Collaboration[]
 
   @@index([brandUserId])
   @@index([status])
@@ -576,25 +577,28 @@ model FcmDevice {
 // Collaboration requests
 // -------------------------
 model Collaboration {
-  id          String              @id @default(uuid())
-  senderId    String
-  receiverId  String
-  postId      String?
-  message     String?
-  status      CollaborationStatus @default(PENDING)
-  respondedAt DateTime?
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id            String              @id @default(uuid())
+  senderId      String
+  receiverId    String
+  postId        String?
+  requirementId String?
+  message       String?
+  status        CollaborationStatus @default(PENDING)
+  respondedAt   DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
-  sender       User          @relation("SentCollabs", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver     User          @relation("ReceivedCollabs", fields: [receiverId], references: [id], onDelete: Cascade)
-  post         Post?         @relation(fields: [postId], references: [id], onDelete: SetNull)
+  sender       User             @relation("SentCollabs", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver     User             @relation("ReceivedCollabs", fields: [receiverId], references: [id], onDelete: Cascade)
+  post         Post?            @relation(fields: [postId], references: [id], onDelete: SetNull)
+  requirement  BrandRequirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
   conversation Conversation?
 
-  @@unique([senderId, receiverId, postId])
+  @@unique([senderId, receiverId, postId, requirementId])
   @@index([receiverId, status])
   @@index([senderId, status])
   @@index([createdAt])
+  @@index([requirementId])
 }
 
 // -------------------------

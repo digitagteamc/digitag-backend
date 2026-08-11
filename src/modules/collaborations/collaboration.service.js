@@ -28,6 +28,17 @@ const postInclude = {
   },
 };
 
+const requirementInclude = {
+  select: {
+    id: true,
+    targetType: true,
+    category: true,
+    deliverables: true,
+    message: true,
+    createdAt: true,
+  },
+};
+
 // Two-user pair is always stored with the lexicographically smaller id in A.
 function orderedPair(userIdA, userIdB) {
   return userIdA < userIdB
@@ -51,6 +62,7 @@ function shapeCollab(collab) {
     senderId: collab.senderId,
     receiverId: collab.receiverId,
     postId: collab.postId,
+    requirementId: collab.requirementId,
     message: collab.message,
     status: collab.status,
     respondedAt: collab.respondedAt,
@@ -59,6 +71,7 @@ function shapeCollab(collab) {
     sender: collab.sender,
     receiver: collab.receiver,
     post: collab.post,
+    requirement: collab.requirement,
   };
 }
 
@@ -73,7 +86,7 @@ async function getCollabRequestQuota(userId) {
   return { used, limit: FREE_COLLAB_REQUESTS_PER_MONTH, remaining: Math.max(FREE_COLLAB_REQUESTS_PER_MONTH - used, 0) };
 }
 
-async function createCollaboration(senderId, { receiverId, postId = null, message = null }, senderRole) {
+async function createCollaboration(senderId, { receiverId, postId = null, requirementId = null, message = null }, senderRole) {
   if (senderId === receiverId) {
     throw ApiError.badRequest('You cannot send a collaboration request to yourself');
   }
@@ -108,10 +121,20 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
     if (post.status === 'CLOSED') throw ApiError.notFound('Post not found');
   }
 
-  // Prevent duplicate PENDING requests for the same (sender, receiver, post).
+  // A "pitch" — a Creator/Freelancer responding to a Brand's posted
+  // requirement, same shape as postId above but scoped to BrandRequirement.
+  if (requirementId) {
+    const requirement = await prisma.brandRequirement.findUnique({ where: { id: requirementId } });
+    if (!requirement || requirement.status !== 'ACTIVE') throw ApiError.notFound('Requirement not found');
+    if (requirement.brandUserId !== receiverId) {
+      throw ApiError.badRequest('Requirement does not belong to the specified recipient');
+    }
+  }
+
+  // Prevent duplicate PENDING requests for the same (sender, receiver, post/requirement).
   // Prisma findUnique can't take null on a composite unique field, so use findFirst.
   const existing = await prisma.collaboration.findFirst({
-    where: { senderId, receiverId, postId: postId || null },
+    where: { senderId, receiverId, postId: postId || null, requirementId: requirementId || null },
   });
   if (existing && existing.status === 'PENDING') {
     throw ApiError.conflict('A pending request already exists for this recipient');
@@ -128,11 +151,11 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
           status: 'PENDING',
           respondedAt: null,
         },
-        include: { sender: userInclude, receiver: userInclude, post: postInclude },
+        include: { sender: userInclude, receiver: userInclude, post: postInclude, requirement: requirementInclude },
       })
     : await prisma.collaboration.create({
-        data: { senderId, receiverId, postId: postId || null, message: message || null },
-        include: { sender: userInclude, receiver: userInclude, post: postInclude },
+        data: { senderId, receiverId, postId: postId || null, requirementId: requirementId || null, message: message || null },
+        include: { sender: userInclude, receiver: userInclude, post: postInclude, requirement: requirementInclude },
       });
 
   const senderName = collab.sender?.creatorProfile?.name || collab.sender?.freelancerProfile?.name || 'Someone';
@@ -147,18 +170,21 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
   return shapeCollab(collab);
 }
 
-async function listCollaborations(userId, { direction = 'incoming', status } = {}) {
+async function listCollaborations(userId, { direction = 'incoming', status, requirementId } = {}) {
   const where = {};
   if (direction === 'incoming') where.receiverId = userId;
   else if (direction === 'outgoing') where.senderId = userId;
   else where.OR = [{ receiverId: userId }, { senderId: userId }];
 
   if (status) where.status = status;
+  // Scopes "View Responses" on a Brand's requirement to just that requirement's
+  // pitches — receiverId already guarantees it's this Brand's own requirement.
+  if (requirementId) where.requirementId = requirementId;
 
   const items = await prisma.collaboration.findMany({
     where,
     orderBy: { createdAt: 'desc' },
-    include: { sender: userInclude, receiver: userInclude, post: postInclude },
+    include: { sender: userInclude, receiver: userInclude, post: postInclude, requirement: requirementInclude },
   });
   return items.map(shapeCollab);
 }

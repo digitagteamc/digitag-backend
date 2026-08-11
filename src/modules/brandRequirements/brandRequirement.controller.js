@@ -14,4 +14,14 @@ const listMine = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
 });
 
-module.exports = { create, listMine };
+const listOpen = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listOpenRequirements(req.user.id, req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const getById = asyncHandler(async (req, res) => {
+  const data = await service.getRequirementById(req.user.id, req.params.id);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
+module.exports = { create, listMine, listOpen, getById };

@@ -11,6 +11,11 @@ const router = Router();
 
 router.get('/mine', authenticate, authorize(ROLES.BRAND), controller.listMine);
 
+// "Opportunities For You" — Creator/Freelancer browsing open Brand requirements.
+router.get('/open', authenticate, authorize(ROLES.CREATOR, ROLES.FREELANCER), controller.listOpen);
+
+router.get('/:id', authenticate, authorize(ROLES.CREATOR, ROLES.FREELANCER, ROLES.BRAND), controller.getById);
+
 router.post(
   '/',
   authenticate,
