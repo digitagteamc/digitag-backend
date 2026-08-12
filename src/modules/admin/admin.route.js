@@ -132,4 +132,10 @@ router.post('/broadcast', requireSuperAdmin, validateRequest({ body: v.broadcast
 // GET /admin/activity-logs?page=&limit=
 router.get('/activity-logs', validateRequest({ query: v.listQuery }), controller.getActivityLogs);
 
+// Event registrations (celebrity meet etc.)
+// GET /admin/event-registrations?eventSlug=&search=&checkedIn=&page=&limit=
+router.get('/event-registrations', validateRequest({ query: v.eventRegistrationListQuery }), controller.getEventRegistrations);
+// POST /admin/event-registrations/checkin  { ticketCode } — staff QR scan check-in
+router.post('/event-registrations/checkin', validateRequest({ body: v.eventRegistrationCheckin }), controller.checkinEventRegistration);
+
 module.exports = router;

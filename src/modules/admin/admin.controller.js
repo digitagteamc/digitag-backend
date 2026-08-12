@@ -241,6 +241,18 @@ const getActivityLogs = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
 });
 
+// ─── Event registrations ────────────────────────────────────────────────────
+
+const getEventRegistrations = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.adminListEventRegistrations(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const checkinEventRegistration = asyncHandler(async (req, res) => {
+  const data = await service.checkinEventRegistration(req.admin.id, req.admin.name, req.body.ticketCode);
+  return success(res, { message: data.alreadyCheckedIn ? 'Already checked in' : 'Checked in', data });
+});
+
 module.exports = {
   login,
   verifyTwoFactorLogin,
@@ -283,4 +295,6 @@ module.exports = {
   updateCategory,
   broadcast,
   getActivityLogs,
+  getEventRegistrations,
+  checkinEventRegistration,
 };
