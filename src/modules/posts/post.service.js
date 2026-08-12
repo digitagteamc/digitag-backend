@@ -356,7 +356,7 @@ async function deletePost(user, id) {
 
 async function getPostById(id, viewerId) {
   const post = await prisma.post.findFirst({
-    where: { id, isActive: true },
+    where: { id, isActive: true, user: { status: 'ACTIVE' } },
     include: buildPostInclude(),
   });
   if (!post) throw ApiError.notFound(MESSAGES.POST.NOT_FOUND);
@@ -380,10 +380,11 @@ async function listUserPosts(userId, query = {}, viewerId) {
   if (query.collaborationType) where.collaborationType = query.collaborationType;
   // Owners see all of their own posts (including expired boosts and closed
   // ones); anyone else browsing someone's posts only sees the ones still
-  // live and not closed.
+  // live and not closed, and only if that user isn't deleted/suspended.
   if (viewerId !== userId) {
     Object.assign(where, notExpiredWhere());
     where.status = { not: 'CLOSED' };
+    where.user = { status: 'ACTIVE' };
   }
 
   const [items, total] = await Promise.all([
@@ -421,7 +422,7 @@ async function unsavePost(userId, postId) {
 async function listSavedPosts(userId, query = {}) {
   const { limit = 20, page = 1 } = parsePagination(query);
   const skip = (page - 1) * limit;
-  const where = { userId, post: notExpiredWhere() };
+  const where = { userId, post: { ...notExpiredWhere(), isActive: true, user: { status: 'ACTIVE' } } };
   const [rows, total] = await Promise.all([
     prisma.savedPost.findMany({
       where,
