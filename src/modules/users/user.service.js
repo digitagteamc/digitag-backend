@@ -70,7 +70,9 @@ async function getUserById(id, viewerId) {
     // This endpoint is publicly browsable (no auth required) — select only
     // profile-facing fields, never mobileNumber/fcmToken/status/etc.
     prisma.user.findUnique({
-      where: { id },
+      // status: 'ACTIVE' in the where, not just the select — a deleted/
+      // suspended user's full profile must 404, not just hide their posts.
+      where: { id, status: 'ACTIVE' },
       select: {
         id: true,
         role: true,
