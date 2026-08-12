@@ -129,6 +129,18 @@ const broadcast = Joi.object({
     .when('target', { is: 'users', then: Joi.required(), otherwise: Joi.forbidden() }),
 });
 
+const eventRegistrationListQuery = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  eventSlug: Joi.string().trim().max(100).optional(),
+  search: Joi.string().trim().max(150).optional().allow(''),
+  checkedIn: Joi.string().valid('true', 'false').optional(),
+});
+
+const eventRegistrationCheckin = Joi.object({
+  ticketCode: uuid.required(),
+});
+
 module.exports = {
   login,
   listQuery,
@@ -151,4 +163,6 @@ module.exports = {
   bulkPostAction,
   bulkUserIds,
   broadcast,
+  eventRegistrationListQuery,
+  eventRegistrationCheckin,
 };

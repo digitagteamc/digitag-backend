@@ -11,6 +11,7 @@ const cache = require('../../services/cache/cache.service');
 const categoryService = require('../categories/category.service');
 const logger = require('../../utils/logger');
 const { syncPremiumStatus } = require('../../utils/userHelpers');
+const eventRegistrationService = require('../eventRegistrations/eventRegistration.service');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1440,6 +1441,18 @@ async function listActivityLogs(query = {}) {
   return { items: items.map(shapeLog), meta: buildPaginationMeta({ total, page, limit }) };
 }
 
+// ─── Event registrations ────────────────────────────────────────────────────
+
+async function adminListEventRegistrations(query) {
+  return eventRegistrationService.adminList(query);
+}
+
+async function checkinEventRegistration(adminId, adminName, ticketCode) {
+  const row = await eventRegistrationService.checkin(ticketCode, adminId);
+  if (!row.alreadyCheckedIn) await logAdminAction(adminId, adminName, 'Checked in event registration', row.name);
+  return row;
+}
+
 module.exports = {
   loginAdmin,
   verifyTwoFactorLogin,
@@ -1482,4 +1495,6 @@ module.exports = {
   updateCategory,
   broadcastNotification,
   listActivityLogs,
+  adminListEventRegistrations,
+  checkinEventRegistration,
 };

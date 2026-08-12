@@ -759,6 +759,29 @@ model LaunchWaitlist {
   createdAt    DateTime @default(now())
 }
 
+// Public event registration (e.g. celebrity meet-and-greets) — register on
+// the website, get a ticket with a QR code, staff scan it at the door to
+// check in. eventSlug is the one reusability hook: a future event just needs
+// a new slug + website page content, not a schema/backend change.
+model EventRegistration {
+  id             String    @id @default(uuid())
+  eventSlug      String
+  name           String
+  email          String
+  mobileNumber   String
+  instagramLink  String
+  location       String
+  ticketCode     String    @unique @default(uuid())
+  checkedIn      Boolean   @default(false)
+  checkedInAt    DateTime?
+  checkedInBy    String?
+  whatsappStatus String?
+  createdAt      DateTime  @default(now())
+
+  @@index([eventSlug])
+  @@index([ticketCode])
+}
+
 enum ReportStatus {
   PENDING
   REVIEWED
