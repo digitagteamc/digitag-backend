@@ -90,6 +90,9 @@ async function getFeed(user, query = {}) {
     isActive: true,
     status: { not: 'CLOSED' },
     role: { in: targetRoles },
+    // A deleted/suspended user's posts shouldn't keep showing to everyone
+    // else — same convention search.service.js already uses.
+    user: { status: 'ACTIVE' },
     ...notExpiredWhere(),
   };
 
