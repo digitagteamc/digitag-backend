@@ -134,7 +134,9 @@ function buildProfileService({ model, role }) {
         user: { select: { id: true, role: true, status: true, createdAt: true } },
       },
     });
-    if (!profile) throw ApiError.notFound(MESSAGES.PROFILE.NOT_FOUND);
+    // A deleted/suspended user's profile must 404 for everyone else, same as
+    // their posts (post.service.js) and their main profile view (user.service.js).
+    if (!profile || profile.user?.status !== 'ACTIVE') throw ApiError.notFound(MESSAGES.PROFILE.NOT_FOUND);
     return attachInstagramAccounts(profile);
   }
 

@@ -38,7 +38,7 @@ async function follow(followerId, followingId, followerRole) {
   if (followerId === followingId) throw ApiError.badRequest('Cannot follow yourself');
   await assertNotBlocked(followerId, followingId);
   const other = await prisma.user.findUnique({ where: { id: followingId } });
-  if (!other) throw ApiError.notFound('User not found');
+  if (!other || other.status !== 'ACTIVE') throw ApiError.notFound('User not found');
 
   const allowedRoles = OPPOSITE_FEED_ROLE[followerRole] || [];
   if (!allowedRoles.includes(other.role)) {
@@ -83,7 +83,9 @@ async function unfollow(followerId, followingId) {
 async function listFollowing(userId, viewerId) {
   if (viewerId && viewerId !== userId && (await isBlockedBetween(userId, viewerId))) return [];
   const rows = await prisma.follow.findMany({
-    where: { followerId: userId },
+    // A deleted/suspended account shouldn't keep appearing in someone else's
+    // following/followers list — same status check as everywhere else.
+    where: { followerId: userId, following: { status: 'ACTIVE' } },
     include: { following: userInclude },
     orderBy: { createdAt: 'desc' },
   });
@@ -93,7 +95,7 @@ async function listFollowing(userId, viewerId) {
 async function listFollowers(userId, viewerId) {
   if (viewerId && viewerId !== userId && (await isBlockedBetween(userId, viewerId))) return [];
   const rows = await prisma.follow.findMany({
-    where: { followingId: userId },
+    where: { followingId: userId, follower: { status: 'ACTIVE' } },
     include: { follower: userInclude },
     orderBy: { createdAt: 'desc' },
   });
