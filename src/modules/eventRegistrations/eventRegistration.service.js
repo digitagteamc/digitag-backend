@@ -37,17 +37,48 @@ async function sendTicket(registration) {
   }).catch(() => {});
 }
 
-async function createRegistration(data) {
-  const registration = await prisma.eventRegistration.create({
-    data: {
-      eventSlug: data.eventSlug,
-      name: data.name,
-      email: data.email,
-      mobileNumber: data.mobileNumber,
-      instagramLink: data.instagramLink,
-      location: data.location,
-    },
+// One ticket per mobile number, and one per email, within a given event —
+// re-registering with either just returns the existing ticket instead of
+// erroring, so someone who fills the form again by mistake lands straight
+// on their real ticket rather than a dead end.
+async function findExisting(eventSlug, mobileNumber, email) {
+  return prisma.eventRegistration.findFirst({
+    where: { eventSlug, OR: [{ mobileNumber }, { email }] },
   });
+}
+
+async function createRegistration(data) {
+  const existing = await findExisting(data.eventSlug, data.mobileNumber, data.email);
+  if (existing) {
+    const qrDataUrl = await qrcode.toDataURL(ticketUrl(existing));
+    return { ...existing, qrDataUrl, ticketUrl: ticketUrl(existing), alreadyRegistered: true };
+  }
+
+  let registration;
+  try {
+    registration = await prisma.eventRegistration.create({
+      data: {
+        eventSlug: data.eventSlug,
+        name: data.name,
+        email: data.email,
+        mobileNumber: data.mobileNumber,
+        instagramLink: data.instagramLink,
+        location: data.location,
+      },
+    });
+  } catch (err) {
+    // Race condition: two requests with the same number/email both passed
+    // the check above before either finished creating. The unique index
+    // catches it — fall back to returning whichever row won.
+    if (err.code === 'P2002') {
+      const winner = await findExisting(data.eventSlug, data.mobileNumber, data.email);
+      if (winner) {
+        const qrDataUrl = await qrcode.toDataURL(ticketUrl(winner));
+        return { ...winner, qrDataUrl, ticketUrl: ticketUrl(winner), alreadyRegistered: true };
+      }
+    }
+    throw err;
+  }
 
   // Never let a slow/failed WhatsApp send hold up the registration response —
   // same non-blocking pattern post.service.js's createPost uses for its
@@ -55,7 +86,7 @@ async function createRegistration(data) {
   setImmediate(() => sendTicket(registration));
 
   const qrDataUrl = await qrcode.toDataURL(ticketUrl(registration));
-  return { ...registration, qrDataUrl, ticketUrl: ticketUrl(registration) };
+  return { ...registration, qrDataUrl, ticketUrl: ticketUrl(registration), alreadyRegistered: false };
 }
 
 async function getByTicketCode(ticketCode) {
