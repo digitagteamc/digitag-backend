@@ -17,7 +17,7 @@ function configured() {
  * which calls this inside setImmediate). Returns 'sent' | 'failed' | 'skipped'
  * for the caller to persist onto EventRegistration.whatsappStatus.
  */
-async function sendTicketMessage({ to, name, eventName, qrImageUrl, ticketUrl }) {
+async function sendTicketMessage({ to, name, eventName, posterImageUrl, qrImageUrl, ticketUrl }) {
   if (!configured()) {
     logger.warn('[WhatsApp] AISENSY_API_KEY/AISENSY_CAMPAIGN_NAME not set — skipping send', { to });
     return 'skipped';
@@ -33,8 +33,12 @@ async function sendTicketMessage({ to, name, eventName, qrImageUrl, ticketUrl })
         campaignName: env.AISENSY_CAMPAIGN_NAME,
         destination: destination.startsWith('91') ? destination : `91${destination}`,
         userName: name,
-        templateParams: [name, eventName],
-        media: { url: qrImageUrl, filename: 'ticket-qr.png' },
+        // 3rd param is the ticket link — template must be approved with a
+        // matching {{3}} in its body. Header image is the event poster
+        // (falls back to the QR code itself if no poster is set) — the QR
+        // is still reachable via the ticket link, so nothing is lost.
+        templateParams: [name, eventName, ticketUrl],
+        media: { url: posterImageUrl || qrImageUrl, filename: 'event-ticket.jpg' },
       }),
     });
 
