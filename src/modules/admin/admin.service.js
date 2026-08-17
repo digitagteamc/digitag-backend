@@ -479,6 +479,38 @@ async function getDashboardStats({ from, to } = {}) {
   };
 }
 
+// Completed Creator/Freelancer profiles grouped by category. A profile can
+// carry more than one category (CreatorProfile/FreelancerProfile.categories
+// is an array), so this unnests it — a profile with 2 categories counts
+// once toward each, meaning the two lists don't sum back to the completed
+// Creator/Freelancer totals from getDashboardStats above. Profiles with no
+// category set are excluded (inner join), not zero-padded in.
+async function getCategoryBreakdown() {
+  const [creators, freelancers] = await Promise.all([
+    prisma.$queryRaw`
+      SELECT c.name AS category, count(*)::int AS count
+      FROM "CreatorProfile" cp
+      JOIN "User" u ON u.id = cp."userId"
+      JOIN LATERAL unnest(cp.categories) AS catid ON true
+      JOIN "Category" c ON c.id = catid
+      WHERE u."isProfileCompleted" = true AND u.role = 'CREATOR' AND u.status != 'DELETED'
+      GROUP BY c.name
+      ORDER BY count DESC, c.name ASC
+    `,
+    prisma.$queryRaw`
+      SELECT c.name AS category, count(*)::int AS count
+      FROM "FreelancerProfile" fp
+      JOIN "User" u ON u.id = fp."userId"
+      JOIN LATERAL unnest(fp.categories) AS catid ON true
+      JOIN "Category" c ON c.id = catid
+      WHERE u."isProfileCompleted" = true AND u.role = 'FREELANCER' AND u.status != 'DELETED'
+      GROUP BY c.name
+      ORDER BY count DESC, c.name ASC
+    `,
+  ]);
+  return { creators, freelancers };
+}
+
 // ─── Signup funnel (where/when users drop off before completing their profile) ─
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -1463,6 +1495,7 @@ module.exports = {
   createAdmin,
   updateAdmin,
   getDashboardStats,
+  getCategoryBreakdown,
   getSignupFunnel,
   listDroppedOffUsers,
   getRevenueStats,
