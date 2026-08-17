@@ -43,6 +43,8 @@ router.patch('/team/:id', requireSuperAdmin, validateRequest({ params: v.idParam
 // Dashboard
 // GET /admin/stats?from=&to=
 router.get('/stats', validateRequest({ query: v.statsQuery }), controller.getStats);
+// GET /admin/stats/categories — completed Creator/Freelancer profiles grouped by category
+router.get('/stats/categories', controller.getCategoryBreakdown);
 // GET /admin/signup-funnel — where/when signups drop off, bucketed into 5-hour IST windows
 router.get('/signup-funnel', controller.getSignupFunnel);
 // GET /admin/signup-funnel/users?from=&to=&role= — the individual users behind those buckets

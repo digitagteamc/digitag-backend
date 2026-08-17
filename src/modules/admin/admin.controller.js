@@ -60,6 +60,11 @@ const getRevenueStats = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
+const getCategoryBreakdown = asyncHandler(async (req, res) => {
+  const data = await service.getCategoryBreakdown();
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
 const getSignupFunnel = asyncHandler(async (req, res) => {
   const data = await service.getSignupFunnel();
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
@@ -263,6 +268,7 @@ module.exports = {
   createAdmin,
   updateAdmin,
   getStats,
+  getCategoryBreakdown,
   getSignupFunnel,
   getDroppedOffUsers,
   getRevenueStats,
