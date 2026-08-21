@@ -768,6 +768,17 @@ async function listUsers(query = {}) {
 async function getUserById(id) {
   const user = await prisma.user.findUnique({ where: { id }, include: userBaseInclude() });
   if (!user) throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
+  // Creator/Freelancer get their full shape (social links, categories,
+  // skills, etc.) — the admin user-detail page needs that, not just the
+  // bare identity fields shapeUser alone returns.
+  if (user.role === 'CREATOR') {
+    const categoryMap = await resolveUserCategories([user]);
+    return shapeCreator(user, categoryMap);
+  }
+  if (user.role === 'FREELANCER') {
+    const categoryMap = await resolveUserCategories([user]);
+    return shapeFreelancer(user, categoryMap);
+  }
   return shapeUser(user);
 }
 
@@ -937,13 +948,14 @@ async function listFreelancers(query = {}) {
 
 async function listPosts(query = {}) {
   const { page, limit, skip, take } = parsePagination(query);
-  const { search, role, status, sort } = query;
+  const { search, role, status, sort, userId } = query;
 
   const where = {};
   if (role) where.role = role;
   if (status === 'active') { where.isActive = true; where.isHidden = false; }
   else if (status === 'hidden') { where.isActive = true; where.isHidden = true; }
   else if (status === 'deleted') { where.isActive = false; }
+  if (userId) where.userId = userId;
 
   const postInclude = {
     user: {
@@ -1057,11 +1069,12 @@ async function bulkModeratePosts(adminId, adminName, postIds, action) {
 
 async function listCollaborations(query = {}) {
   const { page, limit, skip, take } = parsePagination(query);
-  const { status } = query;
+  const { status, userId } = query;
 
   const STATUS_MAP = { pending: 'PENDING', active: 'ACCEPTED', cancelled: 'CANCELLED', completed: 'COMPLETED' };
   const where = {};
   if (status && STATUS_MAP[status]) where.status = STATUS_MAP[status];
+  if (userId) where.OR = [{ senderId: userId }, { receiverId: userId }];
 
   const collabInclude = {
     sender: {
@@ -1093,7 +1106,7 @@ async function listCollaborations(query = {}) {
 
 async function listChats(query = {}) {
   const { page, limit, skip, take } = parsePagination(query);
-  const { search } = query;
+  const { search, userId } = query;
 
   const participantInclude = {
     select: {
@@ -1106,11 +1119,16 @@ async function listChats(query = {}) {
   const convoInclude = {
     participantA: participantInclude,
     participantB: participantInclude,
-    messages: { orderBy: { createdAt: 'asc' }, take: 100 },
+    // Most recent 100, not oldest — a long-running conversation used to show
+    // only its first 100 messages ever sent (orderBy 'asc'), silently hiding
+    // all recent activity while _count still reported the true total. Fetch
+    // newest-first so `take` keeps the recent end, then reverse for display.
+    messages: { orderBy: { createdAt: 'desc' }, take: 100 },
     _count: { select: { messages: true } },
   };
 
   const where = {};
+  if (userId) where.OR = [{ participantAId: userId }, { participantBId: userId }];
 
   const [items, total] = await Promise.all([
     prisma.conversation.findMany({
@@ -1122,6 +1140,8 @@ async function listChats(query = {}) {
     }),
     prisma.conversation.count({ where }),
   ]);
+
+  for (const convo of items) convo.messages.reverse();
 
   let shaped = items.map(shapeChatThread);
 
