@@ -12,6 +12,7 @@ const listQuery = Joi.object({
   search: Joi.string().trim().max(200).optional().allow(''),
   role: Joi.string().valid('CREATOR', 'FREELANCER', 'BRAND', 'AGENCY').optional(),
   status: Joi.string().valid('active', 'suspended', 'deleted').optional(),
+  userId: uuid.optional(),
 });
 
 const postListQuery = Joi.object({
@@ -21,12 +22,14 @@ const postListQuery = Joi.object({
   role: Joi.string().valid('CREATOR', 'FREELANCER').optional(),
   status: Joi.string().valid('active', 'hidden', 'deleted', 'reported').optional(),
   sort: Joi.string().valid('newest', 'expiry').optional(),
+  userId: uuid.optional(),
 });
 
 const collabListQuery = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
   status: Joi.string().valid('pending', 'active', 'cancelled', 'completed').optional(),
+  userId: uuid.optional(),
 });
 
 const reportListQuery = Joi.object({
