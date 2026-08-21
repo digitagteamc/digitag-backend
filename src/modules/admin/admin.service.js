@@ -59,6 +59,8 @@ function userBaseInclude() {
         name: true, email: true, profilePicture: true, location: true,
         skills: true, hourlyRate: true, experienceLevel: true, portfolioUrl: true,
         availability: true, categories: true,
+        instagramHandle: true, youtubeHandle: true, twitterHandle: true,
+        snapchatHandle: true, facebookHandle: true,
       },
     },
   };
@@ -103,15 +105,21 @@ function shapeUser(user) {
   };
 }
 
+// Shared by shapeCreator/shapeFreelancer — both CreatorProfile and
+// FreelancerProfile carry the same five handle fields.
+function buildSocialLinks(profile) {
+  const socialLinks = [];
+  if (profile?.instagramHandle) socialLinks.push({ platform: 'Instagram', url: `https://instagram.com/${profile.instagramHandle.replace('@', '')}` });
+  if (profile?.youtubeHandle) socialLinks.push({ platform: 'YouTube', url: `https://youtube.com/@${profile.youtubeHandle.replace('@', '')}` });
+  if (profile?.twitterHandle) socialLinks.push({ platform: 'Twitter', url: `https://twitter.com/${profile.twitterHandle.replace('@', '')}` });
+  if (profile?.snapchatHandle) socialLinks.push({ platform: 'Snapchat', url: `https://snapchat.com/add/${profile.snapchatHandle.replace('@', '')}` });
+  if (profile?.facebookHandle) socialLinks.push({ platform: 'Facebook', url: `https://facebook.com/${profile.facebookHandle.replace('@', '')}` });
+  return socialLinks;
+}
+
 function shapeCreator(user, categoryMap = new Map()) {
   const base = shapeUser(user);
   const cp = user.creatorProfile;
-  const socialLinks = [];
-  if (cp?.instagramHandle) socialLinks.push({ platform: 'Instagram', url: `https://instagram.com/${cp.instagramHandle.replace('@', '')}` });
-  if (cp?.youtubeHandle) socialLinks.push({ platform: 'YouTube', url: `https://youtube.com/@${cp.youtubeHandle.replace('@', '')}` });
-  if (cp?.twitterHandle) socialLinks.push({ platform: 'Twitter', url: `https://twitter.com/${cp.twitterHandle.replace('@', '')}` });
-  if (cp?.snapchatHandle) socialLinks.push({ platform: 'Snapchat', url: `https://snapchat.com/add/${cp.snapchatHandle.replace('@', '')}` });
-  if (cp?.facebookHandle) socialLinks.push({ platform: 'Facebook', url: `https://facebook.com/${cp.facebookHandle.replace('@', '')}` });
   const categories = shapeProfileCategories(cp, categoryMap);
   return {
     ...base,
@@ -119,7 +127,7 @@ function shapeCreator(user, categoryMap = new Map()) {
     categories,
     location: cp?.location || null,
     followers: cp?.instagramFollowers || 0,
-    socialLinks,
+    socialLinks: buildSocialLinks(cp),
   };
 }
 
@@ -133,6 +141,7 @@ function shapeFreelancer(user, categoryMap = new Map()) {
     experience: fp?.experienceLevel || null,
     location: fp?.location || null,
     portfolioLinks: fp?.portfolioUrl ? [fp.portfolioUrl] : [],
+    socialLinks: buildSocialLinks(fp),
   };
 }
 
