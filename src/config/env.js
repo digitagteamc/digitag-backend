@@ -83,6 +83,11 @@ const env = {
   INSTAGRAM_BUSINESS_ACCOUNT_ID: optional('INSTAGRAM_BUSINESS_ACCOUNT_ID'),
   INSTAGRAM_PAGE_TOKEN: optional('INSTAGRAM_PAGE_TOKEN'), // EAA... Facebook Page token for Business Discovery API
   DIGITAG_INSTAGRAM_USERNAME: optional('DIGITAG_INSTAGRAM_USERNAME', 'digitag.official'),
+  // Set only on production — mirrors every incoming Instagram webhook event
+  // to this URL (the dev server) so DM-based verification can be tested
+  // live on dev too, since Meta only allows one registered webhook URL per
+  // app. Left unset everywhere else so nothing tries to forward anywhere.
+  INSTAGRAM_WEBHOOK_FORWARD_URL: optional('INSTAGRAM_WEBHOOK_FORWARD_URL'),
 
   // YouTube / Facebook OAuth verification
   SOCIAL_OAUTH_REDIRECT_URI: optional('SOCIAL_OAUTH_REDIRECT_URI'), // e.g. https://api.digitag.app/api/v1/social-verifications/callback
