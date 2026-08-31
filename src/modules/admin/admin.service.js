@@ -1422,7 +1422,7 @@ function buildBroadcastWhere(target, { categoryId, userIds } = {}) {
   return BROADCAST_TARGETS[target];
 }
 
-async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds }) {
+async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds, action }) {
   const where = buildBroadcastWhere(target, { categoryId, userIds });
   if (!where) throw ApiError.badRequest('Unknown target audience');
 
@@ -1438,6 +1438,9 @@ async function broadcastNotification(adminId, adminName, { title, body, target, 
   // In-app notification center entry for every matched user, regardless of
   // whether they have a push token — push can be missed (permission denied,
   // app killed, dead token); this is the durable record they'll still see.
+  // `action` (e.g. 'EXPLORE', 'SEARCH') is read by the same routeNotificationData
+  // table the app uses for every other push, so tapping this from the in-app
+  // list behaves identically to tapping the push itself.
   if (matchedUsers.length > 0) {
     await prisma.notification.createMany({
       data: matchedUsers.map((u) => ({
@@ -1445,6 +1448,7 @@ async function broadcastNotification(adminId, adminName, { title, body, target, 
         type: 'ANNOUNCEMENT',
         title,
         body,
+        data: { action: action || 'NONE' },
       })),
     });
   }
@@ -1455,7 +1459,7 @@ async function broadcastNotification(adminId, adminName, { title, body, target, 
   }
 
   const admin = require('firebase-admin');
-  const data = { type: 'ANNOUNCEMENT' };
+  const data = { type: 'ANNOUNCEMENT', action: action || 'NONE' };
   // Firebase's multicast caps at 500 tokens per call.
   const chunks = [];
   for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
