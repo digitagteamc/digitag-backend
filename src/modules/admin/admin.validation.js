@@ -130,6 +130,9 @@ const broadcast = Joi.object({
   categoryId: uuid.when('target', { is: 'category', then: Joi.required(), otherwise: Joi.forbidden() }),
   userIds: Joi.array().items(uuid).min(1).max(500)
     .when('target', { is: 'users', then: Joi.required(), otherwise: Joi.forbidden() }),
+  // Where tapping the notification takes the recipient — 'NONE' means it just
+  // opens the app with no deep link, same as before this field existed.
+  action: Joi.string().valid('NONE', 'EXPLORE', 'SEARCH', 'COMPLETE_PROFILE', 'PRIVACY_SETTINGS').default('NONE'),
 });
 
 const eventRegistrationListQuery = Joi.object({
