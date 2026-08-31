@@ -197,12 +197,27 @@ async function createPost(user, data) {
         }),
       );
 
-      // Discovery notification: a Creator's post reaches Freelancers whose
-      // profile categories match this post's category — not the other
-      // direction, and never a blanket broadcast to the whole app. Uses a
-      // batched multicast (sendBroadcast) rather than one push per matching
-      // freelancer, since a popular category could mean thousands of
-      // recipients.
+      // Discovery notification. A Creator's post reaches Freelancers whose
+      // profile categories match this post's category — Creators only want
+      // Freelancers in the relevant trade to see a given gig. A Freelancer's
+      // post reaches ALL Creators regardless of category — Creators want to
+      // know about any freelancer availability, not just the one category
+      // they last posted in. Never a blanket broadcast to the rest of the
+      // app in either direction. Uses a batched multicast (sendBroadcast)
+      // rather than one push per recipient, since either audience can run
+      // into the thousands.
+      //
+      // One bulk block-list query instead of a per-recipient isBlockedBetween
+      // call — the whole point of sendBroadcast is avoiding per-user
+      // round-trips at scale, so exclusion has to batch the same way.
+      const getBlockedIds = async () => {
+        const blocks = await prisma.block.findMany({
+          where: { OR: [{ blockerId: user.id }, { blockedId: user.id }] },
+          select: { blockerId: true, blockedId: true },
+        });
+        return new Set(blocks.map((b) => (b.blockerId === user.id ? b.blockedId : b.blockerId)));
+      };
+
       if (user.role === ROLES.CREATOR && data.category) {
         const category = await prisma.category.findFirst({
           where: {
@@ -224,16 +239,7 @@ async function createPost(user, data) {
             .map((m) => m.userId)
             .filter((id) => !otherIds.has(id)); // already notified as a collaborator above
           if (categoryUserIds.length) {
-            // One bulk query instead of a per-recipient isBlockedBetween call
-            // — the whole point of sendBroadcast is avoiding per-user
-            // round-trips at scale, so exclusion has to batch the same way.
-            const blocks = await prisma.block.findMany({
-              where: { OR: [{ blockerId: user.id }, { blockedId: user.id }] },
-              select: { blockerId: true, blockedId: true },
-            });
-            const blockedIds = new Set(
-              blocks.map((b) => (b.blockerId === user.id ? b.blockedId : b.blockerId)),
-            );
+            const blockedIds = await getBlockedIds();
             const notBlocked = categoryUserIds.filter((id) => !blockedIds.has(id));
             await push.sendBroadcast(notBlocked, (t) =>
               push.notificationMessage(
@@ -243,6 +249,30 @@ async function createPost(user, data) {
               ),
             );
           }
+        }
+      } else if (user.role === ROLES.FREELANCER) {
+        const creators = await prisma.user.findMany({
+          where: {
+            role: ROLES.CREATOR,
+            status: 'ACTIVE',
+            notifyCategoryPosts: true,
+            pushNotificationsEnabled: true,
+          },
+          select: { id: true },
+        });
+        const creatorIds = creators
+          .map((u) => u.id)
+          .filter((id) => !otherIds.has(id)); // already notified as a collaborator above
+        if (creatorIds.length) {
+          const blockedIds = await getBlockedIds();
+          const notBlocked = creatorIds.filter((id) => !blockedIds.has(id));
+          await push.sendBroadcast(notBlocked, (t) =>
+            push.notificationMessage(
+              t,
+              { type: 'NEW_POST', postId: post.id },
+              { title: `New post from ${posterName}`, body: preview },
+            ),
+          );
         }
       }
     } catch (err) {
