@@ -239,6 +239,11 @@ const broadcast = asyncHandler(async (req, res) => {
   return success(res, { message: 'Broadcast sent', data });
 });
 
+const getBroadcasts = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listBroadcasts(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
 // ─── Activity Logs ────────────────────────────────────────────────────────────
 
 const getActivityLogs = asyncHandler(async (req, res) => {
@@ -300,6 +305,7 @@ module.exports = {
   createCategory,
   updateCategory,
   broadcast,
+  getBroadcasts,
   getActivityLogs,
   getEventRegistrations,
   checkinEventRegistration,

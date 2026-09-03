@@ -129,6 +129,8 @@ router.patch('/categories/:id', requireSuperAdmin, validateRequest({ params: v.i
 // Broadcast — Super Admin only (reaches every user's device at once)
 // POST /admin/broadcast  { title, body, target }
 router.post('/broadcast', requireSuperAdmin, validateRequest({ body: v.broadcast }), controller.broadcast);
+// GET /admin/broadcasts?page=&limit=&target=&status= — history list
+router.get('/broadcasts', requireSuperAdmin, validateRequest({ query: v.broadcastListQuery }), controller.getBroadcasts);
 
 // Activity Logs
 // GET /admin/activity-logs?page=&limit=

@@ -99,12 +99,19 @@ const MULTICAST_CHUNK_SIZE = 500;
  *  (pushNotificationsEnabled, and whatever else the caller already filtered
  *  by) must be checked by the caller before building the userIds list —
  *  unlike sendToUser, this doesn't check per-user settings itself since
- *  doing so per-user would defeat the point of batching. */
-async function sendBroadcast(userIds, buildMessage) {
-  if (!userIds.length) return;
+ *  doing so per-user would defeat the point of batching.
+ *
+ *  `skipPersist` + `broadcastId`: admin Broadcasts need their Notification
+ *  rows tagged with which Broadcast created them (for read-rate tracking),
+ *  which this function's own generic persist block can't do — the caller
+ *  persists with the right broadcastId itself and passes skipPersist so this
+ *  doesn't insert a second, untagged copy. Returns { sentCount } either way
+ *  (previously returned nothing) so callers can record it. */
+async function sendBroadcast(userIds, buildMessage, { skipPersist = false, broadcastId = null } = {}) {
+  if (!userIds.length) return { sentCount: 0 };
 
   const { token: _ignored, ...messageBody } = buildMessage('_multicast_probe_');
-  if (messageBody.notification) {
+  if (messageBody.notification && !skipPersist) {
     await prisma.notification.createMany({
       data: userIds.map((userId) => ({
         userId,
@@ -112,6 +119,7 @@ async function sendBroadcast(userIds, buildMessage) {
         title: messageBody.notification.title,
         body: messageBody.notification.body,
         data: messageBody.data || {},
+        broadcastId,
       })),
     }).catch((err) => logger.error('[Notification] batch persist failed', { err: err.message }));
   }
@@ -124,12 +132,14 @@ async function sendBroadcast(userIds, buildMessage) {
     ...devices.map((d) => d.token),
     ...users.map((u) => u.fcmToken).filter(Boolean),
   ])];
-  if (!tokens.length) return;
+  if (!tokens.length) return { sentCount: 0 };
 
+  let sentCount = 0;
   for (let i = 0; i < tokens.length; i += MULTICAST_CHUNK_SIZE) {
     const batch = tokens.slice(i, i + MULTICAST_CHUNK_SIZE);
     try {
       const res = await admin.messaging().sendEachForMulticast({ tokens: batch, ...messageBody });
+      sentCount += res.successCount;
       const deadTokens = batch.filter((_, idx) => {
         const r = res.responses[idx];
         return !r.success && DEAD_TOKEN_CODES.has(r.error?.code);
@@ -139,6 +149,7 @@ async function sendBroadcast(userIds, buildMessage) {
       logger.error('[FCM] broadcast send failed', { err: err.message });
     }
   }
+  return { sentCount };
 }
 
 /** Data-only push (Android headless handler) with an APNs alert override so

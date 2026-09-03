@@ -12,6 +12,7 @@ const categoryService = require('../categories/category.service');
 const logger = require('../../utils/logger');
 const { syncPremiumStatus } = require('../../utils/userHelpers');
 const eventRegistrationService = require('../eventRegistrations/eventRegistration.service');
+const pushService = require('../../services/push/push.service');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1422,75 +1423,130 @@ function buildBroadcastWhere(target, { categoryId, userIds } = {}) {
   return BROADCAST_TARGETS[target];
 }
 
+// A user who already got an announcement-type broadcast recently doesn't need
+// another one on top — this is the whole-app frequency cap, separate from any
+// per-user notification preference. Named/adjustable in one place.
+const ANNOUNCEMENT_FREQUENCY_CAP_HOURS = 24;
+
+/** Returns the subset of userIds that have NOT received an ANNOUNCEMENT-type
+ *  Notification within the frequency-cap window — i.e. who's actually safe
+ *  to send this broadcast to. */
+async function excludeFrequencyCapped(userIds) {
+  if (!userIds.length) return userIds;
+  const cutoff = new Date(Date.now() - ANNOUNCEMENT_FREQUENCY_CAP_HOURS * 60 * 60 * 1000);
+  const capped = await prisma.notification.findMany({
+    where: { userId: { in: userIds }, type: 'ANNOUNCEMENT', createdAt: { gte: cutoff } },
+    select: { userId: true },
+    distinct: ['userId'],
+  });
+  const cappedIds = new Set(capped.map((c) => c.userId));
+  return userIds.filter((id) => !cappedIds.has(id));
+}
+
+function shapeBroadcast(b, readStats) {
+  const stats = readStats || { total: 0, read: 0 };
+  return {
+    id: b.id,
+    title: b.title,
+    body: b.body,
+    target: b.target,
+    action: b.action,
+    status: b.status,
+    recipientCount: b.recipientCount,
+    sentCount: b.sentCount,
+    readRate: stats.total ? stats.read / stats.total : 0,
+    createdByName: b.createdByName,
+    createdAt: b.createdAt,
+  };
+}
+
 async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds, action }) {
   const where = buildBroadcastWhere(target, { categoryId, userIds });
   if (!where) throw ApiError.badRequest('Unknown target audience');
 
-  const [matchedUsers, devices] = await Promise.all([
-    prisma.user.findMany({ where, select: { id: true, fcmToken: true } }),
-    prisma.fcmDevice.findMany({ where: { user: where }, select: { token: true } }),
-  ]);
-  const tokens = [...new Set([
-    ...devices.map((d) => d.token),
-    ...matchedUsers.filter((u) => u.fcmToken).map((u) => u.fcmToken),
-  ])];
+  const allMatched = await prisma.user.findMany({ where, select: { id: true } });
+  const cappedUserIds = allMatched.map((u) => u.id);
+  const recipientIds = await excludeFrequencyCapped(cappedUserIds);
 
-  // In-app notification center entry for every matched user, regardless of
+  const broadcastRow = await prisma.broadcast.create({
+    data: {
+      title,
+      body,
+      target,
+      categoryId: categoryId || null,
+      userIds: userIds || [],
+      action: action || 'NONE',
+      status: 'SENT',
+      recipientCount: recipientIds.length,
+      createdById: adminId,
+      createdByName: adminName,
+    },
+  });
+
+  if (recipientIds.length === 0) {
+    await logAdminAction(adminId, adminName, `Broadcast to ${target} (0 recipients — none matched or all frequency-capped)`, title);
+    return { ok: true, recipientCount: 0, sentCount: 0, broadcastId: broadcastRow.id };
+  }
+
+  // In-app notification center entry for every recipient, regardless of
   // whether they have a push token — push can be missed (permission denied,
   // app killed, dead token); this is the durable record they'll still see.
   // `action` (e.g. 'EXPLORE', 'SEARCH') is read by the same routeNotificationData
   // table the app uses for every other push, so tapping this from the in-app
-  // list behaves identically to tapping the push itself.
-  if (matchedUsers.length > 0) {
-    await prisma.notification.createMany({
-      data: matchedUsers.map((u) => ({
-        userId: u.id,
-        type: 'ANNOUNCEMENT',
-        title,
-        body,
-        data: { action: action || 'NONE' },
-      })),
-    });
+  // list behaves identically to tapping the push itself. Tagged with
+  // broadcastId so read-rate is a live, queryable stat (see shapeBroadcast).
+  await prisma.notification.createMany({
+    data: recipientIds.map((userId) => ({
+      userId,
+      type: 'ANNOUNCEMENT',
+      title,
+      body,
+      data: { action: action || 'NONE' },
+      broadcastId: broadcastRow.id,
+    })),
+  });
+
+  const { sentCount } = await pushService.sendBroadcast(
+    recipientIds,
+    (token) => pushService.notificationMessage(token, { type: 'ANNOUNCEMENT', action: action || 'NONE' }, { title, body }),
+    { skipPersist: true, broadcastId: broadcastRow.id },
+  );
+
+  await prisma.broadcast.update({ where: { id: broadcastRow.id }, data: { sentCount } });
+  await logAdminAction(adminId, adminName, `Broadcast to ${target} (${recipientIds.length} recipients)`, title);
+  return { ok: true, recipientCount: recipientIds.length, sentCount, broadcastId: broadcastRow.id };
+}
+
+async function listBroadcasts(query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const where = {};
+  if (query.target) where.target = query.target;
+  if (query.status) where.status = query.status;
+
+  const [items, total] = await Promise.all([
+    prisma.broadcast.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.broadcast.count({ where }),
+  ]);
+
+  const readStatsRows = items.length
+    ? await prisma.notification.groupBy({
+        by: ['broadcastId', 'isRead'],
+        where: { broadcastId: { in: items.map((b) => b.id) } },
+        _count: true,
+      })
+    : [];
+  const readStatsMap = new Map();
+  for (const row of readStatsRows) {
+    const stats = readStatsMap.get(row.broadcastId) || { total: 0, read: 0 };
+    stats.total += row._count;
+    if (row.isRead) stats.read += row._count;
+    readStatsMap.set(row.broadcastId, stats);
   }
 
-  if (tokens.length === 0) {
-    await logAdminAction(adminId, adminName, `Broadcast to ${target} (${matchedUsers.length} recipients, 0 with push)`, title);
-    return { ok: true, recipientCount: matchedUsers.length, sentCount: 0 };
-  }
-
-  const admin = require('firebase-admin');
-  const data = { type: 'ANNOUNCEMENT', action: action || 'NONE' };
-  // Firebase's multicast caps at 500 tokens per call.
-  const chunks = [];
-  for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
-
-  let sentCount = 0;
-  const deadTokens = [];
-  for (const chunk of chunks) {
-    try {
-      const res = await admin.messaging().sendEachForMulticast({
-        tokens: chunk,
-        notification: { title, body },
-        data,
-        android: { priority: 'high' },
-        apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: 'default' } } },
-      });
-      sentCount += res.successCount;
-      res.responses.forEach((r, i) => {
-        if (!r.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(r.error?.code)) {
-          deadTokens.push(chunk[i]);
-        }
-      });
-    } catch (err) {
-      logger.error('[broadcast] chunk send failed', { err: err.message });
-    }
-  }
-  if (deadTokens.length) {
-    await prisma.fcmDevice.deleteMany({ where: { token: { in: deadTokens } } }).catch(() => {});
-  }
-
-  await logAdminAction(adminId, adminName, `Broadcast to ${target} (${matchedUsers.length} recipients)`, title);
-  return { ok: true, recipientCount: matchedUsers.length, sentCount };
+  return {
+    items: items.map((b) => shapeBroadcast(b, readStatsMap.get(b.id))),
+    meta: buildPaginationMeta({ total, page, limit }),
+  };
 }
 
 // ─── Activity Logs ────────────────────────────────────────────────────────────
@@ -1560,6 +1616,7 @@ module.exports = {
   createCategory,
   updateCategory,
   broadcastNotification,
+  listBroadcasts,
   listActivityLogs,
   adminListEventRegistrations,
   checkinEventRegistration,

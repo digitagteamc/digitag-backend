@@ -525,19 +525,26 @@ model Message {
 // is intentionally NOT persisted here — it's transient by nature.
 // -------------------------
 model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  type      String
-  title     String
-  body      String
-  data      Json?
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  userId      String
+  type        String
+  title       String
+  body        String
+  data        Json?
+  isRead      Boolean  @default(false)
+  readAt      DateTime?
+  // Only set for rows created by an admin Broadcast — lets read-rate be
+  // computed live (count isRead=true vs total per broadcastId) instead of
+  // maintaining a counter that could drift out of sync.
+  broadcastId String?
+  createdAt   DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  broadcast Broadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([userId, isRead])
+  @@index([broadcastId])
 }
 
 // -------------------------
@@ -704,8 +711,43 @@ model AdminUser {
   updatedAt          DateTime  @updatedAt
 
   activityLogs AdminActivityLog[]
+  broadcasts   Broadcast[]        @relation("BroadcastCreatedBy")
 
   @@index([email])
+}
+
+// -------------------------
+// Admin broadcast notifications
+// -------------------------
+enum BroadcastStatus {
+  SENT
+  SCHEDULED
+  PENDING_APPROVAL
+  REJECTED
+  FAILED
+}
+
+model Broadcast {
+  id             String          @id @default(uuid())
+  title          String
+  body           String
+  target         String
+  categoryId     String?
+  userIds        String[]        @default([])
+  action         String          @default("NONE")
+  status         BroadcastStatus @default(SENT)
+  recipientCount Int             @default(0)
+  sentCount      Int             @default(0)
+  createdById    String
+  createdByName  String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  createdBy     AdminUser      @relation("BroadcastCreatedBy", fields: [createdById], references: [id])
+  notifications Notification[]
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 // -------------------------

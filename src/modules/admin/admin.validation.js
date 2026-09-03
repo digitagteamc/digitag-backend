@@ -135,6 +135,13 @@ const broadcast = Joi.object({
   action: Joi.string().valid('NONE', 'EXPLORE', 'SEARCH', 'COMPLETE_PROFILE', 'PRIVACY_SETTINGS').default('NONE'),
 });
 
+const broadcastListQuery = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  target: Joi.string().optional(),
+  status: Joi.string().optional(),
+});
+
 const eventRegistrationListQuery = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
@@ -169,6 +176,7 @@ module.exports = {
   bulkPostAction,
   bulkUserIds,
   broadcast,
+  broadcastListQuery,
   eventRegistrationListQuery,
   eventRegistrationCheckin,
 };
