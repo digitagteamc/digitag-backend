@@ -129,6 +129,14 @@ router.patch('/categories/:id', requireSuperAdmin, validateRequest({ params: v.i
 // Broadcast — Super Admin only (reaches every user's device at once)
 // POST /admin/broadcast  { title, body, target }
 router.post('/broadcast', requireSuperAdmin, validateRequest({ body: v.broadcast }), controller.broadcast);
+// GET /admin/broadcasts/pending — approval queue (before /:id-shaped routes below)
+router.get('/broadcasts/pending', requireSuperAdmin, controller.getPendingBroadcasts);
+// POST /admin/broadcasts/:id/approve
+router.post('/broadcasts/:id/approve', requireSuperAdmin, validateRequest({ params: v.idParam }), controller.approveBroadcast);
+// POST /admin/broadcasts/:id/reject  { reason? }
+router.post('/broadcasts/:id/reject', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.rejectBroadcast }), controller.rejectBroadcast);
+// GET /admin/broadcasts?page=&limit=&target=&status= — history list
+router.get('/broadcasts', requireSuperAdmin, validateRequest({ query: v.broadcastListQuery }), controller.getBroadcasts);
 
 // Activity Logs
 // GET /admin/activity-logs?page=&limit=

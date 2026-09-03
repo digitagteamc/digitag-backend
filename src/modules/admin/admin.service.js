@@ -12,6 +12,7 @@ const categoryService = require('../categories/category.service');
 const logger = require('../../utils/logger');
 const { syncPremiumStatus } = require('../../utils/userHelpers');
 const eventRegistrationService = require('../eventRegistrations/eventRegistration.service');
+const pushService = require('../../services/push/push.service');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1406,7 +1407,7 @@ const BROADCAST_TARGETS = {
   incomplete_profile: { status: 'ACTIVE', isProfileCompleted: false },
 };
 
-function buildBroadcastWhere(target, { categoryId, userIds } = {}) {
+function buildBroadcastWhere(target, { categoryId, userIds, segment } = {}) {
   if (target === 'category') {
     return {
       status: 'ACTIVE',
@@ -1419,78 +1420,286 @@ function buildBroadcastWhere(target, { categoryId, userIds } = {}) {
   if (target === 'users') {
     return { status: 'ACTIVE', id: { in: userIds } };
   }
+  if (target === 'segment') {
+    // Curated composable filter — 4 fields combined with AND, not a fully
+    // generic query builder. Each field is optional; at least one is
+    // required by validation (admin.validation.js's `segment` schema).
+    const where = { status: 'ACTIVE' };
+    if (segment?.role) where.role = segment.role;
+    if (segment?.isPremium !== undefined && segment?.isPremium !== null) where.isPremium = segment.isPremium;
+    if (segment?.categoryId) {
+      where.OR = [
+        { creatorProfile: { categories: { has: segment.categoryId } } },
+        { freelancerProfile: { categories: { has: segment.categoryId } } },
+      ];
+    }
+    if (segment?.inactiveDays) {
+      where.lastActiveAt = { lt: new Date(Date.now() - segment.inactiveDays * 24 * 60 * 60 * 1000) };
+    }
+    return where;
+  }
   return BROADCAST_TARGETS[target];
 }
 
-async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds, action }) {
-  const where = buildBroadcastWhere(target, { categoryId, userIds });
+// Broad-reach targets need a second admin's sign-off before sending — a
+// single admin can't accidentally blast "Everyone" by themselves. Narrower
+// targets (category/users) are inherently bounded and skip this.
+const APPROVAL_REQUIRED_TARGETS = new Set(['all', 'creators', 'freelancers', 'segment']);
+
+// Quiet hours — the whole user base is India-only (+91 numbers), so one
+// global IST window is sufficient; no per-user timezone tracking exists or
+// is needed. Applies to broad-reach sends only (adds 'premium' on top of the
+// approval-required set — premium doesn't need a second admin's sign-off,
+// but it can still be thousands of people, so timing still matters).
+const QUIET_HOURS_START_IST = 22; // 10pm
+const QUIET_HOURS_END_IST = 7; // 7am
+const QUIET_HOURS_TARGETS = new Set(['all', 'creators', 'freelancers', 'segment', 'premium']);
+
+function isWithinQuietHours(date = new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const h = ist.getUTCHours();
+  return h >= QUIET_HOURS_START_IST || h < QUIET_HOURS_END_IST;
+}
+
+/** Next moment that's outside the quiet-hours window, as a real (non-IST-
+ *  shifted) Date. */
+function nextAllowedSendTime(date = new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const istDayStart = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+  const sevenAmIst = new Date(istDayStart.getTime() + QUIET_HOURS_END_IST * 60 * 60 * 1000);
+  const target = ist.getUTCHours() < QUIET_HOURS_END_IST ? sevenAmIst : new Date(sevenAmIst.getTime() + 24 * 60 * 60 * 1000);
+  return new Date(target.getTime() - IST_OFFSET_MS);
+}
+
+// A user who already got an announcement-type broadcast recently doesn't need
+// another one on top — this is the whole-app frequency cap, separate from any
+// per-user notification preference. Named/adjustable in one place.
+const ANNOUNCEMENT_FREQUENCY_CAP_HOURS = 24;
+
+/** Returns the subset of userIds that have NOT received an ANNOUNCEMENT-type
+ *  Notification within the frequency-cap window — i.e. who's actually safe
+ *  to send this broadcast to. */
+async function excludeFrequencyCapped(userIds) {
+  if (!userIds.length) return userIds;
+  const cutoff = new Date(Date.now() - ANNOUNCEMENT_FREQUENCY_CAP_HOURS * 60 * 60 * 1000);
+  const capped = await prisma.notification.findMany({
+    where: { userId: { in: userIds }, type: 'ANNOUNCEMENT', createdAt: { gte: cutoff } },
+    select: { userId: true },
+    distinct: ['userId'],
+  });
+  const cappedIds = new Set(capped.map((c) => c.userId));
+  return userIds.filter((id) => !cappedIds.has(id));
+}
+
+function shapeBroadcast(b, readStats) {
+  const stats = readStats || { total: 0, read: 0 };
+  return {
+    id: b.id,
+    title: b.title,
+    body: b.body,
+    target: b.target,
+    action: b.action,
+    status: b.status,
+    recipientCount: b.recipientCount,
+    sentCount: b.sentCount,
+    readRate: stats.total ? stats.read / stats.total : 0,
+    createdByName: b.createdByName,
+    createdAt: b.createdAt,
+  };
+}
+
+/** Actually resolves recipients (unless a precomputed list is passed — the
+ *  immediate synchronous send path already has one and shouldn't re-query),
+ *  applies the frequency cap, creates Notification rows, sends the push, and
+ *  updates the Broadcast row to SENT with final counts. Reused by:
+ *  - broadcastNotification's immediate path (precomputed recipientIds)
+ *  - the scheduled-broadcast poller (no precomputed list — re-resolves fresh,
+ *    since the matching audience may have shifted between scheduling and
+ *    send time, which is the correct behavior for a future-dated send)
+ *  - Phase 4's approval flow, the same way */
+async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
+  const { id, target, categoryId, userIds, segment, action, title, body, postId, profileUserId } = broadcastRow;
+
+  // Auto-defer rather than hard-block — applies uniformly whether this call
+  // came from the immediate send path, the scheduled-broadcast poller, or
+  // Phase 4's approval flow, since all three funnel through here.
+  if (QUIET_HOURS_TARGETS.has(target) && isWithinQuietHours()) {
+    const nextTime = nextAllowedSendTime();
+    await prisma.broadcast.update({ where: { id }, data: { status: 'SCHEDULED', scheduledFor: nextTime } });
+    await logAdminAction(broadcastRow.createdById, broadcastRow.createdByName, `Broadcast auto-deferred to ${nextTime.toISOString()} (quiet hours)`, title);
+    return { recipientCount: broadcastRow.recipientCount, sentCount: 0 };
+  }
+
+  let recipientIds = precomputedRecipientIds;
+  if (!recipientIds) {
+    const where = buildBroadcastWhere(target, { categoryId, userIds, segment });
+    if (!where) {
+      await prisma.broadcast.update({ where: { id }, data: { status: 'FAILED' } });
+      return { recipientCount: 0, sentCount: 0 };
+    }
+    const allMatched = await prisma.user.findMany({ where, select: { id: true } });
+    recipientIds = await excludeFrequencyCapped(allMatched.map((u) => u.id));
+  }
+
+  if (recipientIds.length === 0) {
+    await prisma.broadcast.update({ where: { id }, data: { status: 'SENT', recipientCount: 0, sentCount: 0 } });
+    return { recipientCount: 0, sentCount: 0 };
+  }
+
+  const data = { action: action || 'NONE' };
+  if (postId) data.postId = postId;
+  if (profileUserId) data.profileUserId = profileUserId;
+
+  let sentCount;
+  if (pushService.hasTemplateTokens(title) || pushService.hasTemplateTokens(body)) {
+    ({ sentCount } = await pushService.sendPersonalizedBroadcast(recipientIds, { title, body, data, broadcastId: id }));
+  } else {
+    // In-app notification center entry for every recipient, regardless of
+    // whether they have a push token — push can be missed (permission denied,
+    // app killed, dead token); this is the durable record they'll still see.
+    // Tagged with broadcastId so read-rate is a live, queryable stat.
+    await prisma.notification.createMany({
+      data: recipientIds.map((userId) => ({ userId, type: 'ANNOUNCEMENT', title, body, data, broadcastId: id })),
+    });
+    ({ sentCount } = await pushService.sendBroadcast(
+      recipientIds,
+      (token) => pushService.notificationMessage(token, { type: 'ANNOUNCEMENT', ...data }, { title, body }),
+      { skipPersist: true, broadcastId: id },
+    ));
+  }
+
+  await prisma.broadcast.update({
+    where: { id },
+    data: { status: 'SENT', recipientCount: recipientIds.length, sentCount },
+  });
+  return { recipientCount: recipientIds.length, sentCount };
+}
+
+async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds, segment, action, postId, profileUserId, scheduledFor }) {
+  const where = buildBroadcastWhere(target, { categoryId, userIds, segment });
   if (!where) throw ApiError.badRequest('Unknown target audience');
 
-  const [matchedUsers, devices] = await Promise.all([
-    prisma.user.findMany({ where, select: { id: true, fcmToken: true } }),
-    prisma.fcmDevice.findMany({ where: { user: where }, select: { token: true } }),
+  const allMatched = await prisma.user.findMany({ where, select: { id: true } });
+  const recipientIds = await excludeFrequencyCapped(allMatched.map((u) => u.id));
+
+  const scheduledDate = scheduledFor ? new Date(scheduledFor) : null;
+  const isScheduled = Boolean(scheduledDate && scheduledDate.getTime() > Date.now());
+  const needsApproval = APPROVAL_REQUIRED_TARGETS.has(target);
+
+  const broadcastRow = await prisma.broadcast.create({
+    data: {
+      title,
+      body,
+      target,
+      categoryId: categoryId || null,
+      userIds: userIds || [],
+      segment: segment || undefined,
+      action: action || 'NONE',
+      postId: postId || null,
+      profileUserId: profileUserId || null,
+      status: needsApproval ? 'PENDING_APPROVAL' : isScheduled ? 'SCHEDULED' : 'SENT',
+      scheduledFor: isScheduled ? scheduledDate : null,
+      recipientCount: recipientIds.length,
+      createdById: adminId,
+      createdByName: adminName,
+    },
+  });
+
+  if (needsApproval) {
+    await logAdminAction(adminId, adminName, `Broadcast to ${target} awaiting approval (${recipientIds.length} recipients)`, title);
+    return { ok: true, recipientCount: recipientIds.length, sentCount: 0, status: 'PENDING_APPROVAL', broadcastId: broadcastRow.id };
+  }
+
+  if (isScheduled) {
+    await logAdminAction(adminId, adminName, `Scheduled broadcast to ${target} for ${scheduledDate.toISOString()} (${recipientIds.length} recipients)`, title);
+    return { ok: true, recipientCount: recipientIds.length, sentCount: 0, status: 'SCHEDULED', broadcastId: broadcastRow.id };
+  }
+
+  const { sentCount } = await executeBroadcast(broadcastRow, recipientIds);
+  await logAdminAction(adminId, adminName, `Broadcast to ${target} (${recipientIds.length} recipients)`, title);
+  return { ok: true, recipientCount: recipientIds.length, sentCount, broadcastId: broadcastRow.id };
+}
+
+async function listPendingBroadcasts(query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const where = { status: 'PENDING_APPROVAL' };
+
+  const [items, total] = await Promise.all([
+    prisma.broadcast.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.broadcast.count({ where }),
   ]);
-  const tokens = [...new Set([
-    ...devices.map((d) => d.token),
-    ...matchedUsers.filter((u) => u.fcmToken).map((u) => u.fcmToken),
-  ])];
 
-  // In-app notification center entry for every matched user, regardless of
-  // whether they have a push token — push can be missed (permission denied,
-  // app killed, dead token); this is the durable record they'll still see.
-  // `action` (e.g. 'EXPLORE', 'SEARCH') is read by the same routeNotificationData
-  // table the app uses for every other push, so tapping this from the in-app
-  // list behaves identically to tapping the push itself.
-  if (matchedUsers.length > 0) {
-    await prisma.notification.createMany({
-      data: matchedUsers.map((u) => ({
-        userId: u.id,
-        type: 'ANNOUNCEMENT',
-        title,
-        body,
-        data: { action: action || 'NONE' },
-      })),
-    });
+  return { items: items.map((b) => shapeBroadcast(b)), meta: buildPaginationMeta({ total, page, limit }) };
+}
+
+async function approveBroadcast(adminId, adminName, broadcastId) {
+  const b = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  if (!b) throw ApiError.notFound('Broadcast not found');
+  if (b.status !== 'PENDING_APPROVAL') throw ApiError.badRequest('This broadcast is not awaiting approval');
+  if (b.createdById === adminId) throw ApiError.forbidden('You cannot approve your own broadcast');
+
+  const updated = await prisma.broadcast.update({
+    where: { id: broadcastId },
+    data: { approvedById: adminId, approvedByName: adminName },
+  });
+
+  // Approval and scheduling are orthogonal — approving early shouldn't fire
+  // a broadcast that was deliberately scheduled for later.
+  const stillScheduledForFuture = updated.scheduledFor && updated.scheduledFor.getTime() > Date.now();
+  if (stillScheduledForFuture) {
+    await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: 'SCHEDULED' } });
+  } else {
+    await executeBroadcast(updated);
   }
 
-  if (tokens.length === 0) {
-    await logAdminAction(adminId, adminName, `Broadcast to ${target} (${matchedUsers.length} recipients, 0 with push)`, title);
-    return { ok: true, recipientCount: matchedUsers.length, sentCount: 0 };
+  await logAdminAction(adminId, adminName, 'Approved broadcast', b.title);
+  return { ok: true };
+}
+
+async function rejectBroadcast(adminId, adminName, broadcastId, reason) {
+  const b = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  if (!b) throw ApiError.notFound('Broadcast not found');
+  if (b.status !== 'PENDING_APPROVAL') throw ApiError.badRequest('This broadcast is not awaiting approval');
+  if (b.createdById === adminId) throw ApiError.forbidden('You cannot reject your own broadcast');
+
+  await prisma.broadcast.update({
+    where: { id: broadcastId },
+    data: { status: 'REJECTED', rejectedReason: reason || null },
+  });
+  await logAdminAction(adminId, adminName, 'Rejected broadcast', b.title);
+  return { ok: true };
+}
+
+async function listBroadcasts(query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const where = {};
+  if (query.target) where.target = query.target;
+  if (query.status) where.status = query.status;
+
+  const [items, total] = await Promise.all([
+    prisma.broadcast.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.broadcast.count({ where }),
+  ]);
+
+  const readStatsRows = items.length
+    ? await prisma.notification.groupBy({
+        by: ['broadcastId', 'isRead'],
+        where: { broadcastId: { in: items.map((b) => b.id) } },
+        _count: true,
+      })
+    : [];
+  const readStatsMap = new Map();
+  for (const row of readStatsRows) {
+    const stats = readStatsMap.get(row.broadcastId) || { total: 0, read: 0 };
+    stats.total += row._count;
+    if (row.isRead) stats.read += row._count;
+    readStatsMap.set(row.broadcastId, stats);
   }
 
-  const admin = require('firebase-admin');
-  const data = { type: 'ANNOUNCEMENT', action: action || 'NONE' };
-  // Firebase's multicast caps at 500 tokens per call.
-  const chunks = [];
-  for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
-
-  let sentCount = 0;
-  const deadTokens = [];
-  for (const chunk of chunks) {
-    try {
-      const res = await admin.messaging().sendEachForMulticast({
-        tokens: chunk,
-        notification: { title, body },
-        data,
-        android: { priority: 'high' },
-        apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: 'default' } } },
-      });
-      sentCount += res.successCount;
-      res.responses.forEach((r, i) => {
-        if (!r.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(r.error?.code)) {
-          deadTokens.push(chunk[i]);
-        }
-      });
-    } catch (err) {
-      logger.error('[broadcast] chunk send failed', { err: err.message });
-    }
-  }
-  if (deadTokens.length) {
-    await prisma.fcmDevice.deleteMany({ where: { token: { in: deadTokens } } }).catch(() => {});
-  }
-
-  await logAdminAction(adminId, adminName, `Broadcast to ${target} (${matchedUsers.length} recipients)`, title);
-  return { ok: true, recipientCount: matchedUsers.length, sentCount };
+  return {
+    items: items.map((b) => shapeBroadcast(b, readStatsMap.get(b.id))),
+    meta: buildPaginationMeta({ total, page, limit }),
+  };
 }
 
 // ─── Activity Logs ────────────────────────────────────────────────────────────
@@ -1560,6 +1769,11 @@ module.exports = {
   createCategory,
   updateCategory,
   broadcastNotification,
+  listBroadcasts,
+  executeBroadcast,
+  listPendingBroadcasts,
+  approveBroadcast,
+  rejectBroadcast,
   listActivityLogs,
   adminListEventRegistrations,
   checkinEventRegistration,

@@ -6,10 +6,12 @@ const env = require('./config/env');
 const logger = require('./utils/logger');
 const { connectDb, disconnectDb } = require('./config/db');
 const { schedulePruneRefreshTokens } = require('./jobs/pruneRefreshTokens');
+const { scheduleSendBroadcasts } = require('./jobs/sendScheduledBroadcasts');
 
 async function bootstrap() {
   await connectDb();
   schedulePruneRefreshTokens();
+  scheduleSendBroadcasts();
 
   const server = app.listen(env.PORT, () => {
     logger.info(`DigiTag API running on port ${env.PORT} [${env.NODE_ENV}]`);

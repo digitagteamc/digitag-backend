@@ -99,12 +99,19 @@ const MULTICAST_CHUNK_SIZE = 500;
  *  (pushNotificationsEnabled, and whatever else the caller already filtered
  *  by) must be checked by the caller before building the userIds list —
  *  unlike sendToUser, this doesn't check per-user settings itself since
- *  doing so per-user would defeat the point of batching. */
-async function sendBroadcast(userIds, buildMessage) {
-  if (!userIds.length) return;
+ *  doing so per-user would defeat the point of batching.
+ *
+ *  `skipPersist` + `broadcastId`: admin Broadcasts need their Notification
+ *  rows tagged with which Broadcast created them (for read-rate tracking),
+ *  which this function's own generic persist block can't do — the caller
+ *  persists with the right broadcastId itself and passes skipPersist so this
+ *  doesn't insert a second, untagged copy. Returns { sentCount } either way
+ *  (previously returned nothing) so callers can record it. */
+async function sendBroadcast(userIds, buildMessage, { skipPersist = false, broadcastId = null } = {}) {
+  if (!userIds.length) return { sentCount: 0 };
 
   const { token: _ignored, ...messageBody } = buildMessage('_multicast_probe_');
-  if (messageBody.notification) {
+  if (messageBody.notification && !skipPersist) {
     await prisma.notification.createMany({
       data: userIds.map((userId) => ({
         userId,
@@ -112,6 +119,7 @@ async function sendBroadcast(userIds, buildMessage) {
         title: messageBody.notification.title,
         body: messageBody.notification.body,
         data: messageBody.data || {},
+        broadcastId,
       })),
     }).catch((err) => logger.error('[Notification] batch persist failed', { err: err.message }));
   }
@@ -124,12 +132,14 @@ async function sendBroadcast(userIds, buildMessage) {
     ...devices.map((d) => d.token),
     ...users.map((u) => u.fcmToken).filter(Boolean),
   ])];
-  if (!tokens.length) return;
+  if (!tokens.length) return { sentCount: 0 };
 
+  let sentCount = 0;
   for (let i = 0; i < tokens.length; i += MULTICAST_CHUNK_SIZE) {
     const batch = tokens.slice(i, i + MULTICAST_CHUNK_SIZE);
     try {
       const res = await admin.messaging().sendEachForMulticast({ tokens: batch, ...messageBody });
+      sentCount += res.successCount;
       const deadTokens = batch.filter((_, idx) => {
         const r = res.responses[idx];
         return !r.success && DEAD_TOKEN_CODES.has(r.error?.code);
@@ -139,6 +149,92 @@ async function sendBroadcast(userIds, buildMessage) {
       logger.error('[FCM] broadcast send failed', { err: err.message });
     }
   }
+  return { sentCount };
+}
+
+/** Detects the one supported personalization token so far — {{name}},
+ *  case-insensitive, tolerant of inner spacing ({{ name }}). */
+function hasTemplateTokens(str) {
+  return /\{\{\s*name\s*\}\}/i.test(str || '');
+}
+
+function fillTemplate(str, name) {
+  return (str || '').replace(/\{\{\s*name\s*\}\}/gi, name);
+}
+
+/** Same audience/fanout shape as sendBroadcast, but resolves each recipient's
+ *  display name and substitutes {{name}} into title/body per-recipient.
+ *  Requires sendEach (one message per token, still one batched network call
+ *  per chunk of up to 500) instead of sendEachForMulticast, since multicast
+ *  sends identical content to every token in a chunk — only worth the extra
+ *  per-recipient DB/message-building cost when a template token is present,
+ *  which is why broadcastNotification only calls this when hasTemplateTokens
+ *  is true and uses the cheaper sendBroadcast otherwise. */
+async function sendPersonalizedBroadcast(userIds, { title, body, data, broadcastId = null }) {
+  if (!userIds.length) return { sentCount: 0 };
+
+  const [users, devices] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: {
+        id: true,
+        fcmToken: true,
+        creatorProfile: { select: { name: true } },
+        freelancerProfile: { select: { name: true } },
+      },
+    }),
+    prisma.fcmDevice.findMany({ where: { userId: { in: userIds } }, select: { userId: true, token: true } }),
+  ]);
+
+  const nameById = new Map(users.map((u) => [u.id, u.creatorProfile?.name || u.freelancerProfile?.name || 'there']));
+  const tokensByUser = new Map();
+  for (const u of users) {
+    if (u.fcmToken) tokensByUser.set(u.id, new Set([u.fcmToken]));
+  }
+  for (const d of devices) {
+    if (!tokensByUser.has(d.userId)) tokensByUser.set(d.userId, new Set());
+    tokensByUser.get(d.userId).add(d.token);
+  }
+
+  await prisma.notification.createMany({
+    data: userIds.map((userId) => {
+      const name = nameById.get(userId) || 'there';
+      return {
+        userId,
+        type: 'ANNOUNCEMENT',
+        title: fillTemplate(title, name),
+        body: fillTemplate(body, name),
+        data,
+        broadcastId,
+      };
+    }),
+  }).catch((err) => logger.error('[Notification] personalized batch persist failed', { err: err.message }));
+
+  const perTokenMessages = [];
+  for (const userId of userIds) {
+    const name = nameById.get(userId) || 'there';
+    const tokens = tokensByUser.get(userId) || new Set();
+    for (const token of tokens) {
+      perTokenMessages.push(notificationMessage(token, data, { title: fillTemplate(title, name), body: fillTemplate(body, name) }));
+    }
+  }
+  if (!perTokenMessages.length) return { sentCount: 0 };
+
+  let sentCount = 0;
+  for (let i = 0; i < perTokenMessages.length; i += MULTICAST_CHUNK_SIZE) {
+    const batch = perTokenMessages.slice(i, i + MULTICAST_CHUNK_SIZE);
+    try {
+      const res = await admin.messaging().sendEach(batch);
+      sentCount += res.successCount;
+      const deadTokens = batch
+        .filter((_, idx) => { const r = res.responses[idx]; return !r.success && DEAD_TOKEN_CODES.has(r.error?.code); })
+        .map((m) => m.token);
+      if (deadTokens.length) await Promise.all(deadTokens.map(pruneDeadToken));
+    } catch (err) {
+      logger.error('[FCM] personalized broadcast send failed', { err: err.message });
+    }
+  }
+  return { sentCount };
 }
 
 /** Data-only push (Android headless handler) with an APNs alert override so
@@ -214,6 +310,8 @@ async function unregisterDevice(userId, token) {
 module.exports = {
   sendToUser,
   sendBroadcast,
+  hasTemplateTokens,
+  sendPersonalizedBroadcast,
   callAlertMessage,
   dataMessage,
   notificationMessage,
