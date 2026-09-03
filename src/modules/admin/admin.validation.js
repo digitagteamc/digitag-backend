@@ -126,13 +126,26 @@ const bulkUserIds = Joi.object({
 const broadcast = Joi.object({
   title: Joi.string().trim().min(1).max(100).required(),
   body: Joi.string().trim().min(1).max(500).required(),
-  target: Joi.string().valid('all', 'creators', 'freelancers', 'premium', 'incomplete_profile', 'category', 'users').required(),
+  target: Joi.string().valid('all', 'creators', 'freelancers', 'premium', 'incomplete_profile', 'category', 'users', 'segment').required(),
   categoryId: uuid.when('target', { is: 'category', then: Joi.required(), otherwise: Joi.forbidden() }),
   userIds: Joi.array().items(uuid).min(1).max(500)
     .when('target', { is: 'users', then: Joi.required(), otherwise: Joi.forbidden() }),
+  // Custom segment — up to 4 composable filters combined with AND. At least
+  // one must be set; none are individually required.
+  segment: Joi.object({
+    role: Joi.string().valid('CREATOR', 'FREELANCER').optional(),
+    categoryId: uuid.optional(),
+    inactiveDays: Joi.number().integer().min(1).max(365).optional(),
+    isPremium: Joi.boolean().optional(),
+  }).min(1).when('target', { is: 'segment', then: Joi.required(), otherwise: Joi.forbidden() }),
   // Where tapping the notification takes the recipient — 'NONE' means it just
   // opens the app with no deep link, same as before this field existed.
-  action: Joi.string().valid('NONE', 'EXPLORE', 'SEARCH', 'COMPLETE_PROFILE', 'PRIVACY_SETTINGS').default('NONE'),
+  action: Joi.string().valid('NONE', 'EXPLORE', 'SEARCH', 'COMPLETE_PROFILE', 'PRIVACY_SETTINGS', 'POST', 'USER_PROFILE').default('NONE'),
+  postId: uuid.when('action', { is: 'POST', then: Joi.required(), otherwise: Joi.forbidden() }),
+  profileUserId: uuid.when('action', { is: 'USER_PROFILE', then: Joi.required(), otherwise: Joi.forbidden() }),
+  // Send immediately when omitted; otherwise queued as SCHEDULED and sent by
+  // the sendScheduledBroadcasts poller once due.
+  scheduledFor: Joi.date().iso().greater('now').optional(),
 });
 
 const broadcastListQuery = Joi.object({

@@ -1407,7 +1407,7 @@ const BROADCAST_TARGETS = {
   incomplete_profile: { status: 'ACTIVE', isProfileCompleted: false },
 };
 
-function buildBroadcastWhere(target, { categoryId, userIds } = {}) {
+function buildBroadcastWhere(target, { categoryId, userIds, segment } = {}) {
   if (target === 'category') {
     return {
       status: 'ACTIVE',
@@ -1419,6 +1419,24 @@ function buildBroadcastWhere(target, { categoryId, userIds } = {}) {
   }
   if (target === 'users') {
     return { status: 'ACTIVE', id: { in: userIds } };
+  }
+  if (target === 'segment') {
+    // Curated composable filter — 4 fields combined with AND, not a fully
+    // generic query builder. Each field is optional; at least one is
+    // required by validation (admin.validation.js's `segment` schema).
+    const where = { status: 'ACTIVE' };
+    if (segment?.role) where.role = segment.role;
+    if (segment?.isPremium !== undefined && segment?.isPremium !== null) where.isPremium = segment.isPremium;
+    if (segment?.categoryId) {
+      where.OR = [
+        { creatorProfile: { categories: { has: segment.categoryId } } },
+        { freelancerProfile: { categories: { has: segment.categoryId } } },
+      ];
+    }
+    if (segment?.inactiveDays) {
+      where.lastActiveAt = { lt: new Date(Date.now() - segment.inactiveDays * 24 * 60 * 60 * 1000) };
+    }
+    return where;
   }
   return BROADCAST_TARGETS[target];
 }
@@ -1460,13 +1478,72 @@ function shapeBroadcast(b, readStats) {
   };
 }
 
-async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds, action }) {
-  const where = buildBroadcastWhere(target, { categoryId, userIds });
+/** Actually resolves recipients (unless a precomputed list is passed — the
+ *  immediate synchronous send path already has one and shouldn't re-query),
+ *  applies the frequency cap, creates Notification rows, sends the push, and
+ *  updates the Broadcast row to SENT with final counts. Reused by:
+ *  - broadcastNotification's immediate path (precomputed recipientIds)
+ *  - the scheduled-broadcast poller (no precomputed list — re-resolves fresh,
+ *    since the matching audience may have shifted between scheduling and
+ *    send time, which is the correct behavior for a future-dated send)
+ *  - Phase 4's approval flow, the same way */
+async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
+  const { id, target, categoryId, userIds, segment, action, title, body, postId, profileUserId } = broadcastRow;
+
+  let recipientIds = precomputedRecipientIds;
+  if (!recipientIds) {
+    const where = buildBroadcastWhere(target, { categoryId, userIds, segment });
+    if (!where) {
+      await prisma.broadcast.update({ where: { id }, data: { status: 'FAILED' } });
+      return { recipientCount: 0, sentCount: 0 };
+    }
+    const allMatched = await prisma.user.findMany({ where, select: { id: true } });
+    recipientIds = await excludeFrequencyCapped(allMatched.map((u) => u.id));
+  }
+
+  if (recipientIds.length === 0) {
+    await prisma.broadcast.update({ where: { id }, data: { status: 'SENT', recipientCount: 0, sentCount: 0 } });
+    return { recipientCount: 0, sentCount: 0 };
+  }
+
+  const data = { action: action || 'NONE' };
+  if (postId) data.postId = postId;
+  if (profileUserId) data.profileUserId = profileUserId;
+
+  let sentCount;
+  if (pushService.hasTemplateTokens(title) || pushService.hasTemplateTokens(body)) {
+    ({ sentCount } = await pushService.sendPersonalizedBroadcast(recipientIds, { title, body, data, broadcastId: id }));
+  } else {
+    // In-app notification center entry for every recipient, regardless of
+    // whether they have a push token — push can be missed (permission denied,
+    // app killed, dead token); this is the durable record they'll still see.
+    // Tagged with broadcastId so read-rate is a live, queryable stat.
+    await prisma.notification.createMany({
+      data: recipientIds.map((userId) => ({ userId, type: 'ANNOUNCEMENT', title, body, data, broadcastId: id })),
+    });
+    ({ sentCount } = await pushService.sendBroadcast(
+      recipientIds,
+      (token) => pushService.notificationMessage(token, { type: 'ANNOUNCEMENT', ...data }, { title, body }),
+      { skipPersist: true, broadcastId: id },
+    ));
+  }
+
+  await prisma.broadcast.update({
+    where: { id },
+    data: { status: 'SENT', recipientCount: recipientIds.length, sentCount },
+  });
+  return { recipientCount: recipientIds.length, sentCount };
+}
+
+async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds, segment, action, postId, profileUserId, scheduledFor }) {
+  const where = buildBroadcastWhere(target, { categoryId, userIds, segment });
   if (!where) throw ApiError.badRequest('Unknown target audience');
 
   const allMatched = await prisma.user.findMany({ where, select: { id: true } });
-  const cappedUserIds = allMatched.map((u) => u.id);
-  const recipientIds = await excludeFrequencyCapped(cappedUserIds);
+  const recipientIds = await excludeFrequencyCapped(allMatched.map((u) => u.id));
+
+  const scheduledDate = scheduledFor ? new Date(scheduledFor) : null;
+  const isScheduled = Boolean(scheduledDate && scheduledDate.getTime() > Date.now());
 
   const broadcastRow = await prisma.broadcast.create({
     data: {
@@ -1475,44 +1552,24 @@ async function broadcastNotification(adminId, adminName, { title, body, target, 
       target,
       categoryId: categoryId || null,
       userIds: userIds || [],
+      segment: segment || undefined,
       action: action || 'NONE',
-      status: 'SENT',
+      postId: postId || null,
+      profileUserId: profileUserId || null,
+      status: isScheduled ? 'SCHEDULED' : 'SENT',
+      scheduledFor: isScheduled ? scheduledDate : null,
       recipientCount: recipientIds.length,
       createdById: adminId,
       createdByName: adminName,
     },
   });
 
-  if (recipientIds.length === 0) {
-    await logAdminAction(adminId, adminName, `Broadcast to ${target} (0 recipients — none matched or all frequency-capped)`, title);
-    return { ok: true, recipientCount: 0, sentCount: 0, broadcastId: broadcastRow.id };
+  if (isScheduled) {
+    await logAdminAction(adminId, adminName, `Scheduled broadcast to ${target} for ${scheduledDate.toISOString()} (${recipientIds.length} recipients)`, title);
+    return { ok: true, recipientCount: recipientIds.length, sentCount: 0, status: 'SCHEDULED', broadcastId: broadcastRow.id };
   }
 
-  // In-app notification center entry for every recipient, regardless of
-  // whether they have a push token — push can be missed (permission denied,
-  // app killed, dead token); this is the durable record they'll still see.
-  // `action` (e.g. 'EXPLORE', 'SEARCH') is read by the same routeNotificationData
-  // table the app uses for every other push, so tapping this from the in-app
-  // list behaves identically to tapping the push itself. Tagged with
-  // broadcastId so read-rate is a live, queryable stat (see shapeBroadcast).
-  await prisma.notification.createMany({
-    data: recipientIds.map((userId) => ({
-      userId,
-      type: 'ANNOUNCEMENT',
-      title,
-      body,
-      data: { action: action || 'NONE' },
-      broadcastId: broadcastRow.id,
-    })),
-  });
-
-  const { sentCount } = await pushService.sendBroadcast(
-    recipientIds,
-    (token) => pushService.notificationMessage(token, { type: 'ANNOUNCEMENT', action: action || 'NONE' }, { title, body }),
-    { skipPersist: true, broadcastId: broadcastRow.id },
-  );
-
-  await prisma.broadcast.update({ where: { id: broadcastRow.id }, data: { sentCount } });
+  const { sentCount } = await executeBroadcast(broadcastRow, recipientIds);
   await logAdminAction(adminId, adminName, `Broadcast to ${target} (${recipientIds.length} recipients)`, title);
   return { ok: true, recipientCount: recipientIds.length, sentCount, broadcastId: broadcastRow.id };
 }
@@ -1617,6 +1674,7 @@ module.exports = {
   updateCategory,
   broadcastNotification,
   listBroadcasts,
+  executeBroadcast,
   listActivityLogs,
   adminListEventRegistrations,
   checkinEventRegistration,

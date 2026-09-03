@@ -152,6 +152,91 @@ async function sendBroadcast(userIds, buildMessage, { skipPersist = false, broad
   return { sentCount };
 }
 
+/** Detects the one supported personalization token so far — {{name}},
+ *  case-insensitive, tolerant of inner spacing ({{ name }}). */
+function hasTemplateTokens(str) {
+  return /\{\{\s*name\s*\}\}/i.test(str || '');
+}
+
+function fillTemplate(str, name) {
+  return (str || '').replace(/\{\{\s*name\s*\}\}/gi, name);
+}
+
+/** Same audience/fanout shape as sendBroadcast, but resolves each recipient's
+ *  display name and substitutes {{name}} into title/body per-recipient.
+ *  Requires sendEach (one message per token, still one batched network call
+ *  per chunk of up to 500) instead of sendEachForMulticast, since multicast
+ *  sends identical content to every token in a chunk — only worth the extra
+ *  per-recipient DB/message-building cost when a template token is present,
+ *  which is why broadcastNotification only calls this when hasTemplateTokens
+ *  is true and uses the cheaper sendBroadcast otherwise. */
+async function sendPersonalizedBroadcast(userIds, { title, body, data, broadcastId = null }) {
+  if (!userIds.length) return { sentCount: 0 };
+
+  const [users, devices] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: {
+        id: true,
+        fcmToken: true,
+        creatorProfile: { select: { name: true } },
+        freelancerProfile: { select: { name: true } },
+      },
+    }),
+    prisma.fcmDevice.findMany({ where: { userId: { in: userIds } }, select: { userId: true, token: true } }),
+  ]);
+
+  const nameById = new Map(users.map((u) => [u.id, u.creatorProfile?.name || u.freelancerProfile?.name || 'there']));
+  const tokensByUser = new Map();
+  for (const u of users) {
+    if (u.fcmToken) tokensByUser.set(u.id, new Set([u.fcmToken]));
+  }
+  for (const d of devices) {
+    if (!tokensByUser.has(d.userId)) tokensByUser.set(d.userId, new Set());
+    tokensByUser.get(d.userId).add(d.token);
+  }
+
+  await prisma.notification.createMany({
+    data: userIds.map((userId) => {
+      const name = nameById.get(userId) || 'there';
+      return {
+        userId,
+        type: 'ANNOUNCEMENT',
+        title: fillTemplate(title, name),
+        body: fillTemplate(body, name),
+        data,
+        broadcastId,
+      };
+    }),
+  }).catch((err) => logger.error('[Notification] personalized batch persist failed', { err: err.message }));
+
+  const perTokenMessages = [];
+  for (const userId of userIds) {
+    const name = nameById.get(userId) || 'there';
+    const tokens = tokensByUser.get(userId) || new Set();
+    for (const token of tokens) {
+      perTokenMessages.push(notificationMessage(token, data, { title: fillTemplate(title, name), body: fillTemplate(body, name) }));
+    }
+  }
+  if (!perTokenMessages.length) return { sentCount: 0 };
+
+  let sentCount = 0;
+  for (let i = 0; i < perTokenMessages.length; i += MULTICAST_CHUNK_SIZE) {
+    const batch = perTokenMessages.slice(i, i + MULTICAST_CHUNK_SIZE);
+    try {
+      const res = await admin.messaging().sendEach(batch);
+      sentCount += res.successCount;
+      const deadTokens = batch
+        .filter((_, idx) => { const r = res.responses[idx]; return !r.success && DEAD_TOKEN_CODES.has(r.error?.code); })
+        .map((m) => m.token);
+      if (deadTokens.length) await Promise.all(deadTokens.map(pruneDeadToken));
+    } catch (err) {
+      logger.error('[FCM] personalized broadcast send failed', { err: err.message });
+    }
+  }
+  return { sentCount };
+}
+
 /** Data-only push (Android headless handler) with an APNs alert override so
  *  iOS — which won't reliably deliver data-only messages in the background —
  *  still shows a visible, sounding notification. Used for incoming calls. */
@@ -225,6 +310,8 @@ async function unregisterDevice(userId, token) {
 module.exports = {
   sendToUser,
   sendBroadcast,
+  hasTemplateTokens,
+  sendPersonalizedBroadcast,
   callAlertMessage,
   dataMessage,
   notificationMessage,

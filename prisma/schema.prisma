@@ -734,8 +734,14 @@ model Broadcast {
   target         String
   categoryId     String?
   userIds        String[]        @default([])
+  // Composable "custom segment" filter, only set when target === 'segment':
+  // { role?, categoryId?, inactiveDays?, isPremium? }, combined with AND.
+  segment        Json?
   action         String          @default("NONE")
+  postId         String?
+  profileUserId  String?
   status         BroadcastStatus @default(SENT)
+  scheduledFor   DateTime?
   recipientCount Int             @default(0)
   sentCount      Int             @default(0)
   createdById    String
@@ -748,6 +754,7 @@ model Broadcast {
 
   @@index([status])
   @@index([createdAt])
+  @@index([scheduledFor])
 }
 
 // -------------------------
