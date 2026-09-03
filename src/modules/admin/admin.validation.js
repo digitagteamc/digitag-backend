@@ -155,6 +155,10 @@ const broadcastListQuery = Joi.object({
   status: Joi.string().optional(),
 });
 
+const rejectBroadcast = Joi.object({
+  reason: Joi.string().trim().max(300).allow('', null).optional(),
+});
+
 const eventRegistrationListQuery = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
@@ -190,6 +194,7 @@ module.exports = {
   bulkUserIds,
   broadcast,
   broadcastListQuery,
+  rejectBroadcast,
   eventRegistrationListQuery,
   eventRegistrationCheckin,
 };

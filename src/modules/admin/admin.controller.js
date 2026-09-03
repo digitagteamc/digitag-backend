@@ -244,6 +244,21 @@ const getBroadcasts = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
 });
 
+const getPendingBroadcasts = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listPendingBroadcasts(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const approveBroadcast = asyncHandler(async (req, res) => {
+  const data = await service.approveBroadcast(req.admin.id, req.admin.name, req.params.id);
+  return success(res, { message: 'Broadcast approved', data });
+});
+
+const rejectBroadcast = asyncHandler(async (req, res) => {
+  const data = await service.rejectBroadcast(req.admin.id, req.admin.name, req.params.id, req.body.reason);
+  return success(res, { message: 'Broadcast rejected', data });
+});
+
 // ─── Activity Logs ────────────────────────────────────────────────────────────
 
 const getActivityLogs = asyncHandler(async (req, res) => {
@@ -306,6 +321,9 @@ module.exports = {
   updateCategory,
   broadcast,
   getBroadcasts,
+  getPendingBroadcasts,
+  approveBroadcast,
+  rejectBroadcast,
   getActivityLogs,
   getEventRegistrations,
   checkinEventRegistration,

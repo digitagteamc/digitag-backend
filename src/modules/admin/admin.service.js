@@ -1441,6 +1441,36 @@ function buildBroadcastWhere(target, { categoryId, userIds, segment } = {}) {
   return BROADCAST_TARGETS[target];
 }
 
+// Broad-reach targets need a second admin's sign-off before sending — a
+// single admin can't accidentally blast "Everyone" by themselves. Narrower
+// targets (category/users) are inherently bounded and skip this.
+const APPROVAL_REQUIRED_TARGETS = new Set(['all', 'creators', 'freelancers', 'segment']);
+
+// Quiet hours — the whole user base is India-only (+91 numbers), so one
+// global IST window is sufficient; no per-user timezone tracking exists or
+// is needed. Applies to broad-reach sends only (adds 'premium' on top of the
+// approval-required set — premium doesn't need a second admin's sign-off,
+// but it can still be thousands of people, so timing still matters).
+const QUIET_HOURS_START_IST = 22; // 10pm
+const QUIET_HOURS_END_IST = 7; // 7am
+const QUIET_HOURS_TARGETS = new Set(['all', 'creators', 'freelancers', 'segment', 'premium']);
+
+function isWithinQuietHours(date = new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const h = ist.getUTCHours();
+  return h >= QUIET_HOURS_START_IST || h < QUIET_HOURS_END_IST;
+}
+
+/** Next moment that's outside the quiet-hours window, as a real (non-IST-
+ *  shifted) Date. */
+function nextAllowedSendTime(date = new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const istDayStart = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+  const sevenAmIst = new Date(istDayStart.getTime() + QUIET_HOURS_END_IST * 60 * 60 * 1000);
+  const target = ist.getUTCHours() < QUIET_HOURS_END_IST ? sevenAmIst : new Date(sevenAmIst.getTime() + 24 * 60 * 60 * 1000);
+  return new Date(target.getTime() - IST_OFFSET_MS);
+}
+
 // A user who already got an announcement-type broadcast recently doesn't need
 // another one on top — this is the whole-app frequency cap, separate from any
 // per-user notification preference. Named/adjustable in one place.
@@ -1489,6 +1519,16 @@ function shapeBroadcast(b, readStats) {
  *  - Phase 4's approval flow, the same way */
 async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
   const { id, target, categoryId, userIds, segment, action, title, body, postId, profileUserId } = broadcastRow;
+
+  // Auto-defer rather than hard-block — applies uniformly whether this call
+  // came from the immediate send path, the scheduled-broadcast poller, or
+  // Phase 4's approval flow, since all three funnel through here.
+  if (QUIET_HOURS_TARGETS.has(target) && isWithinQuietHours()) {
+    const nextTime = nextAllowedSendTime();
+    await prisma.broadcast.update({ where: { id }, data: { status: 'SCHEDULED', scheduledFor: nextTime } });
+    await logAdminAction(broadcastRow.createdById, broadcastRow.createdByName, `Broadcast auto-deferred to ${nextTime.toISOString()} (quiet hours)`, title);
+    return { recipientCount: broadcastRow.recipientCount, sentCount: 0 };
+  }
 
   let recipientIds = precomputedRecipientIds;
   if (!recipientIds) {
@@ -1544,6 +1584,7 @@ async function broadcastNotification(adminId, adminName, { title, body, target, 
 
   const scheduledDate = scheduledFor ? new Date(scheduledFor) : null;
   const isScheduled = Boolean(scheduledDate && scheduledDate.getTime() > Date.now());
+  const needsApproval = APPROVAL_REQUIRED_TARGETS.has(target);
 
   const broadcastRow = await prisma.broadcast.create({
     data: {
@@ -1556,13 +1597,18 @@ async function broadcastNotification(adminId, adminName, { title, body, target, 
       action: action || 'NONE',
       postId: postId || null,
       profileUserId: profileUserId || null,
-      status: isScheduled ? 'SCHEDULED' : 'SENT',
+      status: needsApproval ? 'PENDING_APPROVAL' : isScheduled ? 'SCHEDULED' : 'SENT',
       scheduledFor: isScheduled ? scheduledDate : null,
       recipientCount: recipientIds.length,
       createdById: adminId,
       createdByName: adminName,
     },
   });
+
+  if (needsApproval) {
+    await logAdminAction(adminId, adminName, `Broadcast to ${target} awaiting approval (${recipientIds.length} recipients)`, title);
+    return { ok: true, recipientCount: recipientIds.length, sentCount: 0, status: 'PENDING_APPROVAL', broadcastId: broadcastRow.id };
+  }
 
   if (isScheduled) {
     await logAdminAction(adminId, adminName, `Scheduled broadcast to ${target} for ${scheduledDate.toISOString()} (${recipientIds.length} recipients)`, title);
@@ -1572,6 +1618,56 @@ async function broadcastNotification(adminId, adminName, { title, body, target, 
   const { sentCount } = await executeBroadcast(broadcastRow, recipientIds);
   await logAdminAction(adminId, adminName, `Broadcast to ${target} (${recipientIds.length} recipients)`, title);
   return { ok: true, recipientCount: recipientIds.length, sentCount, broadcastId: broadcastRow.id };
+}
+
+async function listPendingBroadcasts(query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const where = { status: 'PENDING_APPROVAL' };
+
+  const [items, total] = await Promise.all([
+    prisma.broadcast.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.broadcast.count({ where }),
+  ]);
+
+  return { items: items.map((b) => shapeBroadcast(b)), meta: buildPaginationMeta({ total, page, limit }) };
+}
+
+async function approveBroadcast(adminId, adminName, broadcastId) {
+  const b = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  if (!b) throw ApiError.notFound('Broadcast not found');
+  if (b.status !== 'PENDING_APPROVAL') throw ApiError.badRequest('This broadcast is not awaiting approval');
+  if (b.createdById === adminId) throw ApiError.forbidden('You cannot approve your own broadcast');
+
+  const updated = await prisma.broadcast.update({
+    where: { id: broadcastId },
+    data: { approvedById: adminId, approvedByName: adminName },
+  });
+
+  // Approval and scheduling are orthogonal — approving early shouldn't fire
+  // a broadcast that was deliberately scheduled for later.
+  const stillScheduledForFuture = updated.scheduledFor && updated.scheduledFor.getTime() > Date.now();
+  if (stillScheduledForFuture) {
+    await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: 'SCHEDULED' } });
+  } else {
+    await executeBroadcast(updated);
+  }
+
+  await logAdminAction(adminId, adminName, 'Approved broadcast', b.title);
+  return { ok: true };
+}
+
+async function rejectBroadcast(adminId, adminName, broadcastId, reason) {
+  const b = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  if (!b) throw ApiError.notFound('Broadcast not found');
+  if (b.status !== 'PENDING_APPROVAL') throw ApiError.badRequest('This broadcast is not awaiting approval');
+  if (b.createdById === adminId) throw ApiError.forbidden('You cannot reject your own broadcast');
+
+  await prisma.broadcast.update({
+    where: { id: broadcastId },
+    data: { status: 'REJECTED', rejectedReason: reason || null },
+  });
+  await logAdminAction(adminId, adminName, 'Rejected broadcast', b.title);
+  return { ok: true };
 }
 
 async function listBroadcasts(query = {}) {
@@ -1675,6 +1771,9 @@ module.exports = {
   broadcastNotification,
   listBroadcasts,
   executeBroadcast,
+  listPendingBroadcasts,
+  approveBroadcast,
+  rejectBroadcast,
   listActivityLogs,
   adminListEventRegistrations,
   checkinEventRegistration,
