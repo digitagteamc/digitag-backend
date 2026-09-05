@@ -804,6 +804,40 @@ async function getUserById(id) {
   return { ...shapeUser(user), ...relationCounts };
 }
 
+// Admin-only variants of follow.service.js's listFollowers/listFollowing —
+// those check isBlockedBetween(userId, viewerId) since a blocked user
+// shouldn't see who blocked them; admin has no such restriction and should
+// always see the real list.
+async function listUserFollowers(userId, query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const [rows, total] = await Promise.all([
+    prisma.follow.findMany({
+      where: { followingId: userId },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+      include: { follower: { include: userBaseInclude() } },
+    }),
+    prisma.follow.count({ where: { followingId: userId } }),
+  ]);
+  return { items: rows.map((r) => shapeUser(r.follower)), meta: buildPaginationMeta({ total, page, limit }) };
+}
+
+async function listUserFollowing(userId, query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const [rows, total] = await Promise.all([
+    prisma.follow.findMany({
+      where: { followerId: userId },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+      include: { following: { include: userBaseInclude() } },
+    }),
+    prisma.follow.count({ where: { followerId: userId } }),
+  ]);
+  return { items: rows.map((r) => shapeUser(r.following)), meta: buildPaginationMeta({ total, page, limit }) };
+}
+
 async function suspendUser(adminId, adminName, userId) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || user.status === 'DELETED') throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
@@ -1735,6 +1769,8 @@ module.exports = {
   getRevenueStats,
   listUsers,
   getUserById,
+  listUserFollowers,
+  listUserFollowing,
   suspendUser,
   unsuspendUser,
   deleteUser,

@@ -87,6 +87,16 @@ const getUser = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
+const getUserFollowers = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listUserFollowers(req.params.id, req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const getUserFollowing = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listUserFollowing(req.params.id, req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
 const suspendUser = asyncHandler(async (req, res) => {
   const data = await service.suspendUser(req.admin.id, req.admin.name, req.params.id);
   return success(res, { message: MESSAGES.ADMIN.USER_SUSPENDED, data });
@@ -294,6 +304,8 @@ module.exports = {
   getRevenueStats,
   getUsers,
   getUser,
+  getUserFollowers,
+  getUserFollowing,
   suspendUser,
   unsuspendUser,
   deleteUser,

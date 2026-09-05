@@ -61,6 +61,10 @@ router.post('/users/bulk-suspend', requireSuperAdmin, validateRequest({ body: v.
 router.get('/users', validateRequest({ query: v.listQuery }), controller.getUsers);
 // GET /admin/users/:id
 router.get('/users/:id', validateRequest({ params: v.idParam }), controller.getUser);
+// GET /admin/users/:id/followers?page=&limit=
+router.get('/users/:id/followers', validateRequest({ params: v.idParam }), controller.getUserFollowers);
+// GET /admin/users/:id/following?page=&limit=
+router.get('/users/:id/following', validateRequest({ params: v.idParam }), controller.getUserFollowing);
 // POST /admin/users/:id/suspend — Super Admin only (account-level trust & safety action)
 router.post('/users/:id/suspend', requireSuperAdmin, validateRequest({ params: v.idParam }), controller.suspendUser);
 // POST /admin/users/:id/unsuspend
