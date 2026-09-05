@@ -778,18 +778,30 @@ async function listUsers(query = {}) {
 async function getUserById(id) {
   const user = await prisma.user.findUnique({ where: { id }, include: userBaseInclude() });
   if (!user) throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
+
+  // In-app follow/collaboration counts — distinct from Creator.followers,
+  // which is the Instagram follower count pulled from social verification,
+  // not this app's own Follow model. Admin wants both visible on the detail
+  // page, so these are named followerCount/followingCount to avoid clashing.
+  const [followerCount, followingCount, collaborationCount] = await Promise.all([
+    prisma.follow.count({ where: { followingId: id } }),
+    prisma.follow.count({ where: { followerId: id } }),
+    prisma.collaboration.count({ where: { OR: [{ senderId: id }, { receiverId: id }] } }),
+  ]);
+  const relationCounts = { followerCount, followingCount, collaborationCount };
+
   // Creator/Freelancer get their full shape (social links, categories,
   // skills, etc.) — the admin user-detail page needs that, not just the
   // bare identity fields shapeUser alone returns.
   if (user.role === 'CREATOR') {
     const categoryMap = await resolveUserCategories([user]);
-    return shapeCreator(user, categoryMap);
+    return { ...shapeCreator(user, categoryMap), ...relationCounts };
   }
   if (user.role === 'FREELANCER') {
     const categoryMap = await resolveUserCategories([user]);
-    return shapeFreelancer(user, categoryMap);
+    return { ...shapeFreelancer(user, categoryMap), ...relationCounts };
   }
-  return shapeUser(user);
+  return { ...shapeUser(user), ...relationCounts };
 }
 
 async function suspendUser(adminId, adminName, userId) {
