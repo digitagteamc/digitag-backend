@@ -1471,26 +1471,6 @@ function nextAllowedSendTime(date = new Date()) {
   return new Date(target.getTime() - IST_OFFSET_MS);
 }
 
-// A user who already got an announcement-type broadcast recently doesn't need
-// another one on top — this is the whole-app frequency cap, separate from any
-// per-user notification preference. Named/adjustable in one place.
-const ANNOUNCEMENT_FREQUENCY_CAP_HOURS = 24;
-
-/** Returns the subset of userIds that have NOT received an ANNOUNCEMENT-type
- *  Notification within the frequency-cap window — i.e. who's actually safe
- *  to send this broadcast to. */
-async function excludeFrequencyCapped(userIds) {
-  if (!userIds.length) return userIds;
-  const cutoff = new Date(Date.now() - ANNOUNCEMENT_FREQUENCY_CAP_HOURS * 60 * 60 * 1000);
-  const capped = await prisma.notification.findMany({
-    where: { userId: { in: userIds }, type: 'ANNOUNCEMENT', createdAt: { gte: cutoff } },
-    select: { userId: true },
-    distinct: ['userId'],
-  });
-  const cappedIds = new Set(capped.map((c) => c.userId));
-  return userIds.filter((id) => !cappedIds.has(id));
-}
-
 function shapeBroadcast(b, readStats) {
   const stats = readStats || { total: 0, read: 0 };
   return {
@@ -1510,8 +1490,8 @@ function shapeBroadcast(b, readStats) {
 
 /** Actually resolves recipients (unless a precomputed list is passed — the
  *  immediate synchronous send path already has one and shouldn't re-query),
- *  applies the frequency cap, creates Notification rows, sends the push, and
- *  updates the Broadcast row to SENT with final counts. Reused by:
+ *  creates Notification rows, sends the push, and updates the Broadcast row
+ *  to SENT with final counts. Reused by:
  *  - broadcastNotification's immediate path (precomputed recipientIds)
  *  - the scheduled-broadcast poller (no precomputed list — re-resolves fresh,
  *    since the matching audience may have shifted between scheduling and
@@ -1538,7 +1518,7 @@ async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
       return { recipientCount: 0, sentCount: 0 };
     }
     const allMatched = await prisma.user.findMany({ where, select: { id: true } });
-    recipientIds = await excludeFrequencyCapped(allMatched.map((u) => u.id));
+    recipientIds = allMatched.map((u) => u.id);
   }
 
   if (recipientIds.length === 0) {
@@ -1580,7 +1560,7 @@ async function broadcastNotification(adminId, adminName, { title, body, target, 
   if (!where) throw ApiError.badRequest('Unknown target audience');
 
   const allMatched = await prisma.user.findMany({ where, select: { id: true } });
-  const recipientIds = await excludeFrequencyCapped(allMatched.map((u) => u.id));
+  const recipientIds = allMatched.map((u) => u.id);
 
   const scheduledDate = scheduledFor ? new Date(scheduledFor) : null;
   const isScheduled = Boolean(scheduledDate && scheduledDate.getTime() > Date.now());
