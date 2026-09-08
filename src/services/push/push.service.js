@@ -170,7 +170,7 @@ function fillTemplate(str, name) {
  *  per-recipient DB/message-building cost when a template token is present,
  *  which is why broadcastNotification only calls this when hasTemplateTokens
  *  is true and uses the cheaper sendBroadcast otherwise. */
-async function sendPersonalizedBroadcast(userIds, { title, body, data, broadcastId = null }) {
+async function sendPersonalizedBroadcast(userIds, { title, body, data, broadcastId = null, imageUrl }) {
   if (!userIds.length) return { sentCount: 0 };
 
   const [users, devices] = await Promise.all([
@@ -215,7 +215,7 @@ async function sendPersonalizedBroadcast(userIds, { title, body, data, broadcast
     const name = nameById.get(userId) || 'there';
     const tokens = tokensByUser.get(userId) || new Set();
     for (const token of tokens) {
-      perTokenMessages.push(notificationMessage(token, data, { title: fillTemplate(title, name), body: fillTemplate(body, name) }));
+      perTokenMessages.push(notificationMessage(token, data, { title: fillTemplate(title, name), body: fillTemplate(body, name), imageUrl }));
     }
   }
   if (!perTokenMessages.length) return { sentCount: 0 };
@@ -274,12 +274,16 @@ function dataMessage(token, data) {
 }
 
 /** Standard visible notification (chat messages etc.) — OS renders it on both
- *  platforms when the app is backgrounded; data rides along for tap routing. */
-function notificationMessage(token, data, { title, body }) {
+ *  platforms when the app is backgrounded; data rides along for tap routing.
+ *  `imageUrl` (broadcasts only, so far): Android renders it automatically from
+ *  this field alone. iOS needs a Notification Service Extension to actually
+ *  display it — until that exists, iOS just ignores it and shows title/body
+ *  as normal, so it's harmless to always pass through when present. */
+function notificationMessage(token, data, { title, body, imageUrl }) {
   return {
     token,
     data,
-    notification: { title, body },
+    notification: imageUrl ? { title, body, imageUrl } : { title, body },
     android: { priority: 'high' },
     apns: {
       headers: { 'apns-priority': '10' },

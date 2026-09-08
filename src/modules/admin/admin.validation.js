@@ -146,6 +146,7 @@ const broadcast = Joi.object({
   // Send immediately when omitted; otherwise queued as SCHEDULED and sent by
   // the sendScheduledBroadcasts poller once due.
   scheduledFor: Joi.date().iso().greater('now').optional(),
+  imageUrl: Joi.string().uri().optional(),
 });
 
 const broadcastListQuery = Joi.object({

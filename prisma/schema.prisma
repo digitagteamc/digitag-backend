@@ -740,6 +740,7 @@ model Broadcast {
   action         String          @default("NONE")
   postId         String?
   profileUserId  String?
+  imageUrl       String?
   status         BroadcastStatus @default(SENT)
   scheduledFor   DateTime?
   recipientCount Int             @default(0)

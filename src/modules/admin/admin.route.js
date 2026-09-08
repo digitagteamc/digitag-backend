@@ -3,6 +3,7 @@ const rateLimit = require('express-rate-limit');
 const controller = require('./admin.controller');
 const { authenticateAdmin, requireSuperAdmin } = require('../../middlewares/adminAuthMiddleware');
 const { validateRequest } = require('../../middlewares/validateMiddleware');
+const { uploadImage } = require('../../middlewares/uploadMiddleware');
 const v = require('./admin.validation');
 
 const router = Router();
@@ -131,6 +132,10 @@ router.post('/categories', requireSuperAdmin, validateRequest({ body: v.createCa
 router.patch('/categories/:id', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.updateCategory }), controller.updateCategory);
 
 // Broadcast — Super Admin only (reaches every user's device at once)
+// POST /admin/uploads/image  multipart 'image' — returns { url } to include as
+// the broadcast's imageUrl. Separate from /uploads/image (that one is gated by
+// the regular user JWT middleware, which an admin session doesn't carry).
+router.post('/uploads/image', requireSuperAdmin, uploadImage({ prefix: 'broadcasts' }).single('image'), controller.uploadBroadcastImage);
 // POST /admin/broadcast  { title, body, target }
 router.post('/broadcast', requireSuperAdmin, validateRequest({ body: v.broadcast }), controller.broadcast);
 // GET /admin/broadcasts/pending — approval queue (before /:id-shaped routes below)
