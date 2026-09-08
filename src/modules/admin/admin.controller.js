@@ -3,6 +3,7 @@ const { success } = require('../../utils/apiResponse');
 const MESSAGES = require('../../constants/messages');
 const STATUS = require('../../constants/statusCodes');
 const service = require('./admin.service');
+const uploadService = require('../uploads/upload.service');
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -244,6 +245,11 @@ const updateCategory = asyncHandler(async (req, res) => {
 
 // ─── Broadcast ────────────────────────────────────────────────────────────────
 
+const uploadBroadcastImage = asyncHandler(async (req, res) => {
+  const { url } = await uploadService.handleImageUpload(req.file, { prefix: 'broadcasts' });
+  return success(res, { message: 'Image uploaded', data: { url } });
+});
+
 const broadcast = asyncHandler(async (req, res) => {
   const data = await service.broadcastNotification(req.admin.id, req.admin.name, req.body);
   return success(res, { message: 'Broadcast sent', data });
@@ -331,6 +337,7 @@ module.exports = {
   getCategories,
   createCategory,
   updateCategory,
+  uploadBroadcastImage,
   broadcast,
   getBroadcasts,
   getPendingBroadcasts,

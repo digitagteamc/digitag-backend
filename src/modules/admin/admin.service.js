@@ -1544,7 +1544,7 @@ function shapeBroadcast(b, readStats) {
  *    send time, which is the correct behavior for a future-dated send)
  *  - Phase 4's approval flow, the same way */
 async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
-  const { id, target, categoryId, userIds, segment, action, title, body, postId, profileUserId } = broadcastRow;
+  const { id, target, categoryId, userIds, segment, action, title, body, postId, profileUserId, imageUrl } = broadcastRow;
 
   // Auto-defer rather than hard-block — applies uniformly whether this call
   // came from the immediate send path, the scheduled-broadcast poller, or
@@ -1578,7 +1578,7 @@ async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
 
   let sentCount;
   if (pushService.hasTemplateTokens(title) || pushService.hasTemplateTokens(body)) {
-    ({ sentCount } = await pushService.sendPersonalizedBroadcast(recipientIds, { title, body, data, broadcastId: id }));
+    ({ sentCount } = await pushService.sendPersonalizedBroadcast(recipientIds, { title, body, data, broadcastId: id, imageUrl }));
   } else {
     // In-app notification center entry for every recipient, regardless of
     // whether they have a push token — push can be missed (permission denied,
@@ -1589,7 +1589,7 @@ async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
     });
     ({ sentCount } = await pushService.sendBroadcast(
       recipientIds,
-      (token) => pushService.notificationMessage(token, { type: 'ANNOUNCEMENT', ...data }, { title, body }),
+      (token) => pushService.notificationMessage(token, { type: 'ANNOUNCEMENT', ...data }, { title, body, imageUrl }),
       { skipPersist: true, broadcastId: id },
     ));
   }
@@ -1601,7 +1601,7 @@ async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
   return { recipientCount: recipientIds.length, sentCount };
 }
 
-async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds, segment, action, postId, profileUserId, scheduledFor }) {
+async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds, segment, action, postId, profileUserId, imageUrl, scheduledFor }) {
   const where = buildBroadcastWhere(target, { categoryId, userIds, segment });
   if (!where) throw ApiError.badRequest('Unknown target audience');
 
@@ -1623,6 +1623,7 @@ async function broadcastNotification(adminId, adminName, { title, body, target, 
       action: action || 'NONE',
       postId: postId || null,
       profileUserId: profileUserId || null,
+      imageUrl: imageUrl || null,
       status: needsApproval ? 'PENDING_APPROVAL' : isScheduled ? 'SCHEDULED' : 'SENT',
       scheduledFor: isScheduled ? scheduledDate : null,
       recipientCount: recipientIds.length,
