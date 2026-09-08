@@ -280,15 +280,24 @@ function dataMessage(token, data) {
  *  display it — until that exists, iOS just ignores it and shows title/body
  *  as normal, so it's harmless to always pass through when present. */
 function notificationMessage(token, data, { title, body, imageUrl }) {
+  const apns = {
+    headers: { 'apns-priority': '10' },
+    payload: { aps: { sound: 'default' } },
+  };
+  if (imageUrl) {
+    // mutable-content is what lets iOS hand the push to the Notification
+    // Service Extension before displaying it; fcmOptions.imageUrl is where
+    // the NSE (ios-nse/NotificationService.m) reads the image URL from —
+    // Firebase's SDK writes this into the wire payload's fcm_options.image.
+    apns.payload.aps['mutable-content'] = 1;
+    apns.fcmOptions = { imageUrl };
+  }
   return {
     token,
     data,
     notification: imageUrl ? { title, body, imageUrl } : { title, body },
     android: { priority: 'high' },
-    apns: {
-      headers: { 'apns-priority': '10' },
-      payload: { aps: { sound: 'default' } },
-    },
+    apns,
   };
 }
 
