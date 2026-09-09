@@ -44,6 +44,9 @@ function buildPostInclude() {
             languages: true,
             language: true,
             experienceLevel: true,
+            instagramHandle: true,
+            twitterHandle: true,
+            facebookHandle: true,
           },
         },
         freelancerProfile: {
@@ -59,6 +62,9 @@ function buildPostInclude() {
             language: true,
             experienceLevel: true,
             skills: true,
+            instagramHandle: true,
+            twitterHandle: true,
+            facebookHandle: true,
           },
         },
       },
@@ -88,6 +94,7 @@ function shapeOwner(user, postRole, categoryMap = new Map()) {
     return {
       id: user.id, role, name: null, profilePicture: null, location: null, languages: null,
       experience: null, category: null, categories: [], categorySlugs: [], categoryNames: [],
+      skills: [], instagramHandle: null, twitterHandle: null, facebookHandle: null,
       isPremium: Boolean(user.isPremium),
     };
   }
@@ -118,6 +125,13 @@ function shapeOwner(user, postRole, categoryMap = new Map()) {
     categorySlugs: resolvedCategories.map((c) => c.slug),
     categoryNames: resolvedCategories.map((c) => c.name),
     isPremium: Boolean(user.isPremium),
+    // Skills and handles were already being selected from the DB but dropped
+    // here, so the category screen had to re-fetch each owner's full profile
+    // just to read them — one extra request per unique owner in the feed.
+    skills: Array.isArray(profile.skills) ? profile.skills : [],
+    instagramHandle: profile.instagramHandle || null,
+    twitterHandle: profile.twitterHandle || null,
+    facebookHandle: profile.facebookHandle || null,
   };
 }
 

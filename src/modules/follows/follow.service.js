@@ -11,8 +11,8 @@ const userInclude = {
     role: true,
     mobileNumber: true,
     isPremium: true,
-    creatorProfile: { select: { name: true, profilePicture: true, location: true, bio: true, categories: true } },
-    freelancerProfile: { select: { name: true, profilePicture: true, location: true, bio: true, categories: true } },
+    creatorProfile: { select: { name: true, profilePicture: true, location: true, bio: true, categories: true, instagramHandle: true, twitterHandle: true, facebookHandle: true } },
+    freelancerProfile: { select: { name: true, profilePicture: true, location: true, bio: true, categories: true, skills: true, instagramHandle: true, twitterHandle: true, facebookHandle: true } },
   },
 };
 
@@ -31,6 +31,12 @@ function shapeUser(u, categoryMap) {
     bio: profile ? profile.bio : null,
     isPremium: Boolean(u.isPremium),
     categoryNames,
+    // Included so screens listing suggestions don't have to fetch each
+    // user's full profile separately just to show skills/socials.
+    skills: Array.isArray(profile?.skills) ? profile.skills : [],
+    instagramHandle: profile?.instagramHandle || null,
+    twitterHandle: profile?.twitterHandle || null,
+    facebookHandle: profile?.facebookHandle || null,
   };
 }
 
