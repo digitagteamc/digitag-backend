@@ -21,6 +21,12 @@ router.get(
   validateRequest({ params: userIdParam }),
   controller.withUser,
 );
+router.get(
+  '/with/:userId/by-post',
+  authenticate,
+  validateRequest({ params: userIdParam }),
+  controller.withUserByPost,
+);
 router.patch(
   '/:id',
   authenticate,

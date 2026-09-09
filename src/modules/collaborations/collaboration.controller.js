@@ -28,9 +28,14 @@ const withUser = asyncHandler(async (req, res) => {
   return success(res, { message: 'Fetched successfully', data });
 });
 
+const withUserByPost = asyncHandler(async (req, res) => {
+  const data = await service.getCollaborationsWithByPost(req.user.id, req.params.userId);
+  return success(res, { message: 'Fetched successfully', data });
+});
+
 const quota = asyncHandler(async (req, res) => {
   const data = await service.getCollabRequestQuota(req.user.id);
   return success(res, { message: 'Fetched successfully', data });
 });
 
-module.exports = { create, list, respond, cancel, withUser, quota };
+module.exports = { create, list, respond, cancel, withUser, withUserByPost, quota };

@@ -293,11 +293,40 @@ async function getCollaborationWith(userId, otherUserId, postId = null) {
   return collab ? shapeCollab(collab) : null;
 }
 
+/** Every post-scoped collaboration between two users, keyed by postId.
+ *  A profile screen needs the collab state for each of that user's posts —
+ *  asking per post meant one request per post on every profile open, which
+ *  is what pushed the app into the API rate limit. All of them live in the
+ *  same pair, so one query answers the whole screen. */
+async function getCollaborationsWithByPost(userId, otherUserId) {
+  if (userId === otherUserId) return {};
+  const collabs = await prisma.collaboration.findMany({
+    where: {
+      postId: { not: null },
+      OR: [
+        { senderId: userId, receiverId: otherUserId },
+        { senderId: otherUserId, receiverId: userId },
+      ],
+    },
+    orderBy: { updatedAt: 'desc' },
+    include: { sender: userInclude, receiver: userInclude, post: postInclude },
+  });
+
+  // Ordered newest-first, so the first entry seen for a post is the current
+  // one — matching getCollaborationWith's single-post behaviour.
+  const byPost = {};
+  for (const c of collabs) {
+    if (!byPost[c.postId]) byPost[c.postId] = shapeCollab(c);
+  }
+  return byPost;
+}
+
 module.exports = {
   createCollaboration,
   listCollaborations,
   respondToCollaboration,
   cancelCollaboration,
   getCollaborationWith,
+  getCollaborationsWithByPost,
   getCollabRequestQuota,
 };
