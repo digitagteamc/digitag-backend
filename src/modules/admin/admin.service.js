@@ -1572,9 +1572,17 @@ async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
     return { recipientCount: 0, sentCount: 0 };
   }
 
-  const data = { action: action || 'NONE' };
+  // `type` must live inside this object, not just as the Notification row's
+  // own column — routeNotificationData() (mobile) reads data.type to decide
+  // where to navigate, and the in-app notification list only ever has this
+  // JSON blob to work with (unlike a fresh push, which gets type merged in
+  // separately). Without it, tapping a broadcast from the in-app list did
+  // nothing — tapping the OS push notification worked because that path
+  // included type another way, but this persisted copy never did.
+  const data = { type: 'ANNOUNCEMENT', action: action || 'NONE' };
   if (postId) data.postId = postId;
   if (profileUserId) data.profileUserId = profileUserId;
+  if (imageUrl) data.imageUrl = imageUrl;
 
   let sentCount;
   if (pushService.hasTemplateTokens(title) || pushService.hasTemplateTokens(body)) {
@@ -1589,7 +1597,7 @@ async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
     });
     ({ sentCount } = await pushService.sendBroadcast(
       recipientIds,
-      (token) => pushService.notificationMessage(token, { type: 'ANNOUNCEMENT', ...data }, { title, body, imageUrl }),
+      (token) => pushService.notificationMessage(token, data, { title, body, imageUrl }),
       { skipPersist: true, broadcastId: id },
     ));
   }
