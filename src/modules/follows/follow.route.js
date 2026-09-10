@@ -2,7 +2,7 @@ const { Router } = require('express');
 const Joi = require('joi');
 
 const controller = require('./follow.controller');
-const { authenticate } = require('../../middlewares/authMiddleware');
+const { authenticate, optionalAuth } = require('../../middlewares/authMiddleware');
 const { validateRequest } = require('../../middlewares/validateMiddleware');
 const { uuid } = require('../../validations/common.validation');
 
@@ -10,10 +10,18 @@ const router = Router();
 
 const userIdParam = Joi.object({ userId: uuid.required() });
 const limitQuery = Joi.object({ limit: Joi.number().integer().min(1).max(50).optional() }).unknown(true);
+const byCategoryQuery = Joi.object({
+  categorySlug: Joi.string().required(),
+  page: Joi.number().integer().min(1).optional(),
+  limit: Joi.number().integer().min(1).max(100).optional(),
+}).unknown(true);
 
 router.get('/following', authenticate, controller.following);
 router.get('/followers', authenticate, controller.followers);
 router.get('/suggestions', authenticate, validateRequest({ query: limitQuery }), controller.suggestions);
+// Guest-browsable, same as /feed — a category grid on the home screen is
+// discovery, not an account feature.
+router.get('/by-category', optionalAuth, validateRequest({ query: byCategoryQuery }), controller.byCategory);
 
 router.get('/:userId/status', authenticate, validateRequest({ params: userIdParam }), controller.status);
 router.get('/:userId/following', authenticate, validateRequest({ params: userIdParam }), controller.userFollowing);

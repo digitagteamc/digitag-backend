@@ -45,4 +45,9 @@ const suggestions = asyncHandler(async (req, res) => {
   return success(res, { message: 'Fetched successfully', data });
 });
 
-module.exports = { follow, unfollow, status, following, followers, suggestions, userFollowing, userFollowers };
+const byCategory = asyncHandler(async (req, res) => {
+  const { data, meta } = await service.listByCategory(req.user, req.query);
+  return success(res, { message: 'Fetched successfully', data, meta });
+});
+
+module.exports = { follow, unfollow, status, following, followers, suggestions, byCategory, userFollowing, userFollowers };
