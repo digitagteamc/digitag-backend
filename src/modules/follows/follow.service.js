@@ -109,8 +109,13 @@ async function listFollowers(userId, viewerId) {
   return rows.map((r) => shapeUser(r.follower));
 }
 
-async function listSuggestions(userId, { limit = 20 } = {}) {
-  const take = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
+async function listSuggestions(userId, { page, limit } = {}) {
+  // Was a flat take-only fetch with no page concept at all — every call
+  // returned the exact same top-N recent signups, so a caller wanting more
+  // had no way to actually get more, only a bigger single batch. Real
+  // page/skip now, same 50-per-page cap as before, kept backward compatible:
+  // no page passed still behaves exactly like the old default (page 1).
+  const { skip, take, page: p, limit: l } = parsePagination({ page, limit }, { limit: 20, maxLimit: 50 });
 
   const me = await prisma.user.findUnique({ where: { id: userId } });
   if (!me) throw ApiError.notFound('User not found');
@@ -124,17 +129,23 @@ async function listSuggestions(userId, { limit = 20 } = {}) {
   });
   const excludeIds = new Set([userId, ...following.map((f) => f.followingId)]);
 
-  const candidates = await prisma.user.findMany({
-    where: {
-      role: { in: targetRoles },
-      status: 'ACTIVE',
-      isProfileCompleted: true,
-      id: { notIn: Array.from(excludeIds) },
-    },
-    orderBy: { createdAt: 'desc' },
-    take,
-    ...userInclude,
-  });
+  const where = {
+    role: { in: targetRoles },
+    status: 'ACTIVE',
+    isProfileCompleted: true,
+    id: { notIn: Array.from(excludeIds) },
+  };
+
+  const [total, candidates] = await Promise.all([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+      ...userInclude,
+    }),
+  ]);
 
   // Profiles store `categories` as raw Category-table UUIDs — resolve them to
   // names so the suggestion cards can show what the person does instead of a
@@ -143,7 +154,10 @@ async function listSuggestions(userId, { limit = 20 } = {}) {
     candidates.flatMap((c) => (c.creatorProfile || c.freelancerProfile)?.categories || []),
   );
 
-  return candidates.map((c) => shapeUser(c, categoryMap));
+  return {
+    data: candidates.map((c) => shapeUser(c, categoryMap)),
+    meta: buildPaginationMeta({ total, page: p, limit: l }),
+  };
 }
 
 // listSuggestions above is deliberately capped at 50 recent signups across
