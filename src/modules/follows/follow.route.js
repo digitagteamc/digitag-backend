@@ -9,7 +9,10 @@ const { uuid } = require('../../validations/common.validation');
 const router = Router();
 
 const userIdParam = Joi.object({ userId: uuid.required() });
-const limitQuery = Joi.object({ limit: Joi.number().integer().min(1).max(50).optional() }).unknown(true);
+const limitQuery = Joi.object({
+  limit: Joi.number().integer().min(1).max(50).optional(),
+  page: Joi.number().integer().min(1).optional(),
+}).unknown(true);
 const byCategoryQuery = Joi.object({
   categorySlug: Joi.string().required(),
   page: Joi.number().integer().min(1).optional(),
