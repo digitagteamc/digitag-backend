@@ -436,8 +436,8 @@ async function deleteAccount(userId) {
                     users: {
                         include: {
                             subscription: true,
-                            creatorProfile: { select: { tagId: true } },
-                            freelancerProfile: { select: { tagId: true } },
+                            creatorProfile: { select: { tagId: true, email: true } },
+                            freelancerProfile: { select: { tagId: true, email: true } },
                         }
                     }
                 }
@@ -494,11 +494,28 @@ async function deleteAccount(userId) {
                     isPremium: false,
                 },
             }),
-            ...(profile.creatorProfile?.tagId
-                ? [prisma.creatorProfile.update({ where: { userId: profile.id }, data: { tagId: tombstone(profile.creatorProfile.tagId) } })]
+            // email carries its own @unique constraint same as tagId — left
+            // untouched here, a deleted user's own old profile row kept
+            // claiming their email forever, so signing up again with the
+            // same email failed at "complete profile" with a duplicate-value
+            // error the new signup had no way to explain or work around.
+            ...(profile.creatorProfile
+                ? [prisma.creatorProfile.update({
+                    where: { userId: profile.id },
+                    data: {
+                        ...(profile.creatorProfile.tagId ? { tagId: tombstone(profile.creatorProfile.tagId) } : {}),
+                        ...(profile.creatorProfile.email ? { email: tombstone(profile.creatorProfile.email) } : {}),
+                    },
+                })]
                 : []),
-            ...(profile.freelancerProfile?.tagId
-                ? [prisma.freelancerProfile.update({ where: { userId: profile.id }, data: { tagId: tombstone(profile.freelancerProfile.tagId) } })]
+            ...(profile.freelancerProfile
+                ? [prisma.freelancerProfile.update({
+                    where: { userId: profile.id },
+                    data: {
+                        ...(profile.freelancerProfile.tagId ? { tagId: tombstone(profile.freelancerProfile.tagId) } : {}),
+                        ...(profile.freelancerProfile.email ? { email: tombstone(profile.freelancerProfile.email) } : {}),
+                    },
+                })]
                 : []),
             prisma.refreshToken.updateMany({ where: { userId: profile.id, revokedAt: null }, data: { revokedAt: new Date() } }),
             prisma.fcmDevice.deleteMany({ where: { userId: profile.id } }),
