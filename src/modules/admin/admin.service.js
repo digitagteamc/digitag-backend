@@ -12,9 +12,11 @@ const categoryService = require('../categories/category.service');
 const logger = require('../../utils/logger');
 const { syncPremiumStatus } = require('../../utils/userHelpers');
 const push = require('../../services/push/push.service');
+const pushService = require('../../services/push/push.service');
 const youtubeChannelService = require('../youtubeChannels/youtubeChannel.service');
 const adTypeService = require('../adTypes/adType.service');
 const celebrityService = require('../celebrities/celebrity.service');
+const eventRegistrationService = require('../eventRegistrations/eventRegistration.service');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +64,8 @@ function userBaseInclude() {
         name: true, email: true, profilePicture: true, location: true,
         skills: true, hourlyRate: true, experienceLevel: true, portfolioUrl: true,
         availability: true, categories: true,
+        instagramHandle: true, youtubeHandle: true, twitterHandle: true,
+        snapchatHandle: true, facebookHandle: true,
       },
     },
   };
@@ -106,15 +110,21 @@ function shapeUser(user) {
   };
 }
 
+// Shared by shapeCreator/shapeFreelancer — both CreatorProfile and
+// FreelancerProfile carry the same five handle fields.
+function buildSocialLinks(profile) {
+  const socialLinks = [];
+  if (profile?.instagramHandle) socialLinks.push({ platform: 'Instagram', url: `https://instagram.com/${profile.instagramHandle.replace('@', '')}` });
+  if (profile?.youtubeHandle) socialLinks.push({ platform: 'YouTube', url: `https://youtube.com/@${profile.youtubeHandle.replace('@', '')}` });
+  if (profile?.twitterHandle) socialLinks.push({ platform: 'Twitter', url: `https://twitter.com/${profile.twitterHandle.replace('@', '')}` });
+  if (profile?.snapchatHandle) socialLinks.push({ platform: 'Snapchat', url: `https://snapchat.com/add/${profile.snapchatHandle.replace('@', '')}` });
+  if (profile?.facebookHandle) socialLinks.push({ platform: 'Facebook', url: `https://facebook.com/${profile.facebookHandle.replace('@', '')}` });
+  return socialLinks;
+}
+
 function shapeCreator(user, categoryMap = new Map()) {
   const base = shapeUser(user);
   const cp = user.creatorProfile;
-  const socialLinks = [];
-  if (cp?.instagramHandle) socialLinks.push({ platform: 'Instagram', url: `https://instagram.com/${cp.instagramHandle.replace('@', '')}` });
-  if (cp?.youtubeHandle) socialLinks.push({ platform: 'YouTube', url: `https://youtube.com/@${cp.youtubeHandle.replace('@', '')}` });
-  if (cp?.twitterHandle) socialLinks.push({ platform: 'Twitter', url: `https://twitter.com/${cp.twitterHandle.replace('@', '')}` });
-  if (cp?.snapchatHandle) socialLinks.push({ platform: 'Snapchat', url: `https://snapchat.com/add/${cp.snapchatHandle.replace('@', '')}` });
-  if (cp?.facebookHandle) socialLinks.push({ platform: 'Facebook', url: `https://facebook.com/${cp.facebookHandle.replace('@', '')}` });
   const categories = shapeProfileCategories(cp, categoryMap);
   return {
     ...base,
@@ -122,7 +132,7 @@ function shapeCreator(user, categoryMap = new Map()) {
     categories,
     location: cp?.location || null,
     followers: cp?.instagramFollowers || 0,
-    socialLinks,
+    socialLinks: buildSocialLinks(cp),
   };
 }
 
@@ -136,6 +146,7 @@ function shapeFreelancer(user, categoryMap = new Map()) {
     experience: fp?.experienceLevel || null,
     location: fp?.location || null,
     portfolioLinks: fp?.portfolioUrl ? [fp.portfolioUrl] : [],
+    socialLinks: buildSocialLinks(fp),
   };
 }
 
@@ -482,6 +493,38 @@ async function getDashboardStats({ from, to } = {}) {
   };
 }
 
+// Completed Creator/Freelancer profiles grouped by category. A profile can
+// carry more than one category (CreatorProfile/FreelancerProfile.categories
+// is an array), so this unnests it — a profile with 2 categories counts
+// once toward each, meaning the two lists don't sum back to the completed
+// Creator/Freelancer totals from getDashboardStats above. Profiles with no
+// category set are excluded (inner join), not zero-padded in.
+async function getCategoryBreakdown() {
+  const [creators, freelancers] = await Promise.all([
+    prisma.$queryRaw`
+      SELECT c.name AS category, count(*)::int AS count
+      FROM "CreatorProfile" cp
+      JOIN "User" u ON u.id = cp."userId"
+      JOIN LATERAL unnest(cp.categories) AS catid ON true
+      JOIN "Category" c ON c.id = catid
+      WHERE u."isProfileCompleted" = true AND u.role = 'CREATOR' AND u.status != 'DELETED'
+      GROUP BY c.name
+      ORDER BY count DESC, c.name ASC
+    `,
+    prisma.$queryRaw`
+      SELECT c.name AS category, count(*)::int AS count
+      FROM "FreelancerProfile" fp
+      JOIN "User" u ON u.id = fp."userId"
+      JOIN LATERAL unnest(fp.categories) AS catid ON true
+      JOIN "Category" c ON c.id = catid
+      WHERE u."isProfileCompleted" = true AND u.role = 'FREELANCER' AND u.status != 'DELETED'
+      GROUP BY c.name
+      ORDER BY count DESC, c.name ASC
+    `,
+  ]);
+  return { creators, freelancers };
+}
+
 // ─── Signup funnel (where/when users drop off before completing their profile) ─
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -739,7 +782,64 @@ async function listUsers(query = {}) {
 async function getUserById(id) {
   const user = await prisma.user.findUnique({ where: { id }, include: userBaseInclude() });
   if (!user) throw ApiError.notFound(MESSAGES.ADMIN.USER_NOT_FOUND);
-  return shapeUser(user);
+
+  // In-app follow/collaboration counts — distinct from Creator.followers,
+  // which is the Instagram follower count pulled from social verification,
+  // not this app's own Follow model. Admin wants both visible on the detail
+  // page, so these are named followerCount/followingCount to avoid clashing.
+  const [followerCount, followingCount, collaborationCount] = await Promise.all([
+    prisma.follow.count({ where: { followingId: id } }),
+    prisma.follow.count({ where: { followerId: id } }),
+    prisma.collaboration.count({ where: { OR: [{ senderId: id }, { receiverId: id }] } }),
+  ]);
+  const relationCounts = { followerCount, followingCount, collaborationCount };
+
+  // Creator/Freelancer get their full shape (social links, categories,
+  // skills, etc.) — the admin user-detail page needs that, not just the
+  // bare identity fields shapeUser alone returns.
+  if (user.role === 'CREATOR') {
+    const categoryMap = await resolveUserCategories([user]);
+    return { ...shapeCreator(user, categoryMap), ...relationCounts };
+  }
+  if (user.role === 'FREELANCER') {
+    const categoryMap = await resolveUserCategories([user]);
+    return { ...shapeFreelancer(user, categoryMap), ...relationCounts };
+  }
+  return { ...shapeUser(user), ...relationCounts };
+}
+
+// Admin-only variants of follow.service.js's listFollowers/listFollowing —
+// those check isBlockedBetween(userId, viewerId) since a blocked user
+// shouldn't see who blocked them; admin has no such restriction and should
+// always see the real list.
+async function listUserFollowers(userId, query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const [rows, total] = await Promise.all([
+    prisma.follow.findMany({
+      where: { followingId: userId },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+      include: { follower: { include: userBaseInclude() } },
+    }),
+    prisma.follow.count({ where: { followingId: userId } }),
+  ]);
+  return { items: rows.map((r) => shapeUser(r.follower)), meta: buildPaginationMeta({ total, page, limit }) };
+}
+
+async function listUserFollowing(userId, query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const [rows, total] = await Promise.all([
+    prisma.follow.findMany({
+      where: { followerId: userId },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+      include: { following: { include: userBaseInclude() } },
+    }),
+    prisma.follow.count({ where: { followerId: userId } }),
+  ]);
+  return { items: rows.map((r) => shapeUser(r.following)), meta: buildPaginationMeta({ total, page, limit }) };
 }
 
 async function suspendUser(adminId, adminName, userId) {
@@ -968,13 +1068,14 @@ async function listFreelancers(query = {}) {
 
 async function listPosts(query = {}) {
   const { page, limit, skip, take } = parsePagination(query);
-  const { search, role, status, sort } = query;
+  const { search, role, status, sort, userId } = query;
 
   const where = {};
   if (role) where.role = role;
   if (status === 'active') { where.isActive = true; where.isHidden = false; }
   else if (status === 'hidden') { where.isActive = true; where.isHidden = true; }
   else if (status === 'deleted') { where.isActive = false; }
+  if (userId) where.userId = userId;
 
   const postInclude = {
     user: {
@@ -1088,11 +1189,12 @@ async function bulkModeratePosts(adminId, adminName, postIds, action) {
 
 async function listCollaborations(query = {}) {
   const { page, limit, skip, take } = parsePagination(query);
-  const { status } = query;
+  const { status, userId } = query;
 
   const STATUS_MAP = { pending: 'PENDING', active: 'ACCEPTED', cancelled: 'CANCELLED', completed: 'COMPLETED' };
   const where = {};
   if (status && STATUS_MAP[status]) where.status = STATUS_MAP[status];
+  if (userId) where.OR = [{ senderId: userId }, { receiverId: userId }];
 
   const collabInclude = {
     sender: {
@@ -1124,7 +1226,7 @@ async function listCollaborations(query = {}) {
 
 async function listChats(query = {}) {
   const { page, limit, skip, take } = parsePagination(query);
-  const { search } = query;
+  const { search, userId } = query;
 
   const participantInclude = {
     select: {
@@ -1137,11 +1239,16 @@ async function listChats(query = {}) {
   const convoInclude = {
     participantA: participantInclude,
     participantB: participantInclude,
-    messages: { orderBy: { createdAt: 'asc' }, take: 100 },
+    // Most recent 100, not oldest — a long-running conversation used to show
+    // only its first 100 messages ever sent (orderBy 'asc'), silently hiding
+    // all recent activity while _count still reported the true total. Fetch
+    // newest-first so `take` keeps the recent end, then reverse for display.
+    messages: { orderBy: { createdAt: 'desc' }, take: 100 },
     _count: { select: { messages: true } },
   };
 
   const where = {};
+  if (userId) where.OR = [{ participantAId: userId }, { participantBId: userId }];
 
   const [items, total] = await Promise.all([
     prisma.conversation.findMany({
@@ -1153,6 +1260,8 @@ async function listChats(query = {}) {
     }),
     prisma.conversation.count({ where }),
   ]);
+
+  for (const convo of items) convo.messages.reverse();
 
   let shaped = items.map(shapeChatThread);
 
@@ -1456,7 +1565,7 @@ const BROADCAST_TARGETS = {
   incomplete_profile: { status: 'ACTIVE', isProfileCompleted: false },
 };
 
-function buildBroadcastWhere(target, { categoryId, userIds } = {}) {
+function buildBroadcastWhere(target, { categoryId, userIds, segment } = {}) {
   if (target === 'category') {
     return {
       status: 'ACTIVE',
@@ -1469,74 +1578,275 @@ function buildBroadcastWhere(target, { categoryId, userIds } = {}) {
   if (target === 'users') {
     return { status: 'ACTIVE', id: { in: userIds } };
   }
+  if (target === 'segment') {
+    // Curated composable filter — 4 fields combined with AND, not a fully
+    // generic query builder. Each field is optional; at least one is
+    // required by validation (admin.validation.js's `segment` schema).
+    const where = { status: 'ACTIVE' };
+    if (segment?.role) where.role = segment.role;
+    if (segment?.isPremium !== undefined && segment?.isPremium !== null) where.isPremium = segment.isPremium;
+    if (segment?.categoryId) {
+      where.OR = [
+        { creatorProfile: { categories: { has: segment.categoryId } } },
+        { freelancerProfile: { categories: { has: segment.categoryId } } },
+      ];
+    }
+    if (segment?.inactiveDays) {
+      where.lastActiveAt = { lt: new Date(Date.now() - segment.inactiveDays * 24 * 60 * 60 * 1000) };
+    }
+    return where;
+  }
   return BROADCAST_TARGETS[target];
 }
 
-async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds }) {
-  const where = buildBroadcastWhere(target, { categoryId, userIds });
+// Broad-reach targets need a second admin's sign-off before sending — a
+// single admin can't accidentally blast "Everyone" by themselves. Narrower
+// targets (category/users) are inherently bounded and skip this.
+const APPROVAL_REQUIRED_TARGETS = new Set(['all', 'creators', 'freelancers', 'segment']);
+
+// Quiet hours — the whole user base is India-only (+91 numbers), so one
+// global IST window is sufficient; no per-user timezone tracking exists or
+// is needed. Applies to broad-reach sends only (adds 'premium' on top of the
+// approval-required set — premium doesn't need a second admin's sign-off,
+// but it can still be thousands of people, so timing still matters).
+const QUIET_HOURS_START_IST = 22; // 10pm
+const QUIET_HOURS_END_IST = 7; // 7am
+const QUIET_HOURS_TARGETS = new Set(['all', 'creators', 'freelancers', 'segment', 'premium']);
+
+function isWithinQuietHours(date = new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const h = ist.getUTCHours();
+  return h >= QUIET_HOURS_START_IST || h < QUIET_HOURS_END_IST;
+}
+
+/** Next moment that's outside the quiet-hours window, as a real (non-IST-
+ *  shifted) Date. */
+function nextAllowedSendTime(date = new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const istDayStart = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+  const sevenAmIst = new Date(istDayStart.getTime() + QUIET_HOURS_END_IST * 60 * 60 * 1000);
+  const target = ist.getUTCHours() < QUIET_HOURS_END_IST ? sevenAmIst : new Date(sevenAmIst.getTime() + 24 * 60 * 60 * 1000);
+  return new Date(target.getTime() - IST_OFFSET_MS);
+}
+
+function shapeBroadcast(b, readStats) {
+  const stats = readStats || { total: 0, read: 0 };
+  return {
+    id: b.id,
+    title: b.title,
+    body: b.body,
+    target: b.target,
+    action: b.action,
+    status: b.status,
+    recipientCount: b.recipientCount,
+    sentCount: b.sentCount,
+    readRate: stats.total ? stats.read / stats.total : 0,
+    createdByName: b.createdByName,
+    createdAt: b.createdAt,
+  };
+}
+
+/** Actually resolves recipients (unless a precomputed list is passed — the
+ *  immediate synchronous send path already has one and shouldn't re-query),
+ *  creates Notification rows, sends the push, and updates the Broadcast row
+ *  to SENT with final counts. Reused by:
+ *  - broadcastNotification's immediate path (precomputed recipientIds)
+ *  - the scheduled-broadcast poller (no precomputed list — re-resolves fresh,
+ *    since the matching audience may have shifted between scheduling and
+ *    send time, which is the correct behavior for a future-dated send)
+ *  - Phase 4's approval flow, the same way */
+async function executeBroadcast(broadcastRow, precomputedRecipientIds = null) {
+  const { id, target, categoryId, userIds, segment, action, title, body, postId, profileUserId, imageUrl } = broadcastRow;
+
+  // Auto-defer rather than hard-block — applies uniformly whether this call
+  // came from the immediate send path, the scheduled-broadcast poller, or
+  // Phase 4's approval flow, since all three funnel through here.
+  if (QUIET_HOURS_TARGETS.has(target) && isWithinQuietHours()) {
+    const nextTime = nextAllowedSendTime();
+    await prisma.broadcast.update({ where: { id }, data: { status: 'SCHEDULED', scheduledFor: nextTime } });
+    await logAdminAction(broadcastRow.createdById, broadcastRow.createdByName, `Broadcast auto-deferred to ${nextTime.toISOString()} (quiet hours)`, title);
+    return { recipientCount: broadcastRow.recipientCount, sentCount: 0 };
+  }
+
+  let recipientIds = precomputedRecipientIds;
+  if (!recipientIds) {
+    const where = buildBroadcastWhere(target, { categoryId, userIds, segment });
+    if (!where) {
+      await prisma.broadcast.update({ where: { id }, data: { status: 'FAILED' } });
+      return { recipientCount: 0, sentCount: 0 };
+    }
+    const allMatched = await prisma.user.findMany({ where, select: { id: true } });
+    recipientIds = allMatched.map((u) => u.id);
+  }
+
+  if (recipientIds.length === 0) {
+    await prisma.broadcast.update({ where: { id }, data: { status: 'SENT', recipientCount: 0, sentCount: 0 } });
+    return { recipientCount: 0, sentCount: 0 };
+  }
+
+  // `type` must live inside this object, not just as the Notification row's
+  // own column — routeNotificationData() (mobile) reads data.type to decide
+  // where to navigate, and the in-app notification list only ever has this
+  // JSON blob to work with (unlike a fresh push, which gets type merged in
+  // separately). Without it, tapping a broadcast from the in-app list did
+  // nothing — tapping the OS push notification worked because that path
+  // included type another way, but this persisted copy never did.
+  const data = { type: 'ANNOUNCEMENT', action: action || 'NONE' };
+  if (postId) data.postId = postId;
+  if (profileUserId) data.profileUserId = profileUserId;
+  if (imageUrl) data.imageUrl = imageUrl;
+
+  let sentCount;
+  if (pushService.hasTemplateTokens(title) || pushService.hasTemplateTokens(body)) {
+    ({ sentCount } = await pushService.sendPersonalizedBroadcast(recipientIds, { title, body, data, broadcastId: id, imageUrl }));
+  } else {
+    // In-app notification center entry for every recipient, regardless of
+    // whether they have a push token — push can be missed (permission denied,
+    // app killed, dead token); this is the durable record they'll still see.
+    // Tagged with broadcastId so read-rate is a live, queryable stat.
+    await prisma.notification.createMany({
+      data: recipientIds.map((userId) => ({ userId, type: 'ANNOUNCEMENT', title, body, data, broadcastId: id })),
+    });
+    ({ sentCount } = await pushService.sendBroadcast(
+      recipientIds,
+      (token) => pushService.notificationMessage(token, data, { title, body, imageUrl }),
+      { skipPersist: true, broadcastId: id },
+    ));
+  }
+
+  await prisma.broadcast.update({
+    where: { id },
+    data: { status: 'SENT', recipientCount: recipientIds.length, sentCount },
+  });
+  return { recipientCount: recipientIds.length, sentCount };
+}
+
+async function broadcastNotification(adminId, adminName, { title, body, target, categoryId, userIds, segment, action, postId, profileUserId, imageUrl, scheduledFor }) {
+  const where = buildBroadcastWhere(target, { categoryId, userIds, segment });
   if (!where) throw ApiError.badRequest('Unknown target audience');
 
-  const [matchedUsers, devices] = await Promise.all([
-    prisma.user.findMany({ where, select: { id: true, fcmToken: true } }),
-    prisma.fcmDevice.findMany({ where: { user: where }, select: { token: true } }),
+  const allMatched = await prisma.user.findMany({ where, select: { id: true } });
+  const recipientIds = allMatched.map((u) => u.id);
+
+  const scheduledDate = scheduledFor ? new Date(scheduledFor) : null;
+  const isScheduled = Boolean(scheduledDate && scheduledDate.getTime() > Date.now());
+  const needsApproval = APPROVAL_REQUIRED_TARGETS.has(target);
+
+  const broadcastRow = await prisma.broadcast.create({
+    data: {
+      title,
+      body,
+      target,
+      categoryId: categoryId || null,
+      userIds: userIds || [],
+      segment: segment || undefined,
+      action: action || 'NONE',
+      postId: postId || null,
+      profileUserId: profileUserId || null,
+      imageUrl: imageUrl || null,
+      status: needsApproval ? 'PENDING_APPROVAL' : isScheduled ? 'SCHEDULED' : 'SENT',
+      scheduledFor: isScheduled ? scheduledDate : null,
+      recipientCount: recipientIds.length,
+      createdById: adminId,
+      createdByName: adminName,
+    },
+  });
+
+  if (needsApproval) {
+    await logAdminAction(adminId, adminName, `Broadcast to ${target} awaiting approval (${recipientIds.length} recipients)`, title);
+    return { ok: true, recipientCount: recipientIds.length, sentCount: 0, status: 'PENDING_APPROVAL', broadcastId: broadcastRow.id };
+  }
+
+  if (isScheduled) {
+    await logAdminAction(adminId, adminName, `Scheduled broadcast to ${target} for ${scheduledDate.toISOString()} (${recipientIds.length} recipients)`, title);
+    return { ok: true, recipientCount: recipientIds.length, sentCount: 0, status: 'SCHEDULED', broadcastId: broadcastRow.id };
+  }
+
+  const { sentCount } = await executeBroadcast(broadcastRow, recipientIds);
+  await logAdminAction(adminId, adminName, `Broadcast to ${target} (${recipientIds.length} recipients)`, title);
+  return { ok: true, recipientCount: recipientIds.length, sentCount, broadcastId: broadcastRow.id };
+}
+
+async function listPendingBroadcasts(query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const where = { status: 'PENDING_APPROVAL' };
+
+  const [items, total] = await Promise.all([
+    prisma.broadcast.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.broadcast.count({ where }),
   ]);
-  const tokens = [...new Set([
-    ...devices.map((d) => d.token),
-    ...matchedUsers.filter((u) => u.fcmToken).map((u) => u.fcmToken),
-  ])];
 
-  // In-app notification center entry for every matched user, regardless of
-  // whether they have a push token — push can be missed (permission denied,
-  // app killed, dead token); this is the durable record they'll still see.
-  if (matchedUsers.length > 0) {
-    await prisma.notification.createMany({
-      data: matchedUsers.map((u) => ({
-        userId: u.id,
-        type: 'ANNOUNCEMENT',
-        title,
-        body,
-      })),
-    });
+  return { items: items.map((b) => shapeBroadcast(b)), meta: buildPaginationMeta({ total, page, limit }) };
+}
+
+async function approveBroadcast(adminId, adminName, broadcastId) {
+  const b = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  if (!b) throw ApiError.notFound('Broadcast not found');
+  if (b.status !== 'PENDING_APPROVAL') throw ApiError.badRequest('This broadcast is not awaiting approval');
+  if (b.createdById === adminId) throw ApiError.forbidden('You cannot approve your own broadcast');
+
+  const updated = await prisma.broadcast.update({
+    where: { id: broadcastId },
+    data: { approvedById: adminId, approvedByName: adminName },
+  });
+
+  // Approval and scheduling are orthogonal — approving early shouldn't fire
+  // a broadcast that was deliberately scheduled for later.
+  const stillScheduledForFuture = updated.scheduledFor && updated.scheduledFor.getTime() > Date.now();
+  if (stillScheduledForFuture) {
+    await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: 'SCHEDULED' } });
+  } else {
+    await executeBroadcast(updated);
   }
 
-  if (tokens.length === 0) {
-    await logAdminAction(adminId, adminName, `Broadcast to ${target} (${matchedUsers.length} recipients, 0 with push)`, title);
-    return { ok: true, recipientCount: matchedUsers.length, sentCount: 0 };
+  await logAdminAction(adminId, adminName, 'Approved broadcast', b.title);
+  return { ok: true };
+}
+
+async function rejectBroadcast(adminId, adminName, broadcastId, reason) {
+  const b = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  if (!b) throw ApiError.notFound('Broadcast not found');
+  if (b.status !== 'PENDING_APPROVAL') throw ApiError.badRequest('This broadcast is not awaiting approval');
+  if (b.createdById === adminId) throw ApiError.forbidden('You cannot reject your own broadcast');
+
+  await prisma.broadcast.update({
+    where: { id: broadcastId },
+    data: { status: 'REJECTED', rejectedReason: reason || null },
+  });
+  await logAdminAction(adminId, adminName, 'Rejected broadcast', b.title);
+  return { ok: true };
+}
+
+async function listBroadcasts(query = {}) {
+  const { page, limit, skip, take } = parsePagination(query);
+  const where = {};
+  if (query.target) where.target = query.target;
+  if (query.status) where.status = query.status;
+
+  const [items, total] = await Promise.all([
+    prisma.broadcast.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+    prisma.broadcast.count({ where }),
+  ]);
+
+  const readStatsRows = items.length
+    ? await prisma.notification.groupBy({
+        by: ['broadcastId', 'isRead'],
+        where: { broadcastId: { in: items.map((b) => b.id) } },
+        _count: true,
+      })
+    : [];
+  const readStatsMap = new Map();
+  for (const row of readStatsRows) {
+    const stats = readStatsMap.get(row.broadcastId) || { total: 0, read: 0 };
+    stats.total += row._count;
+    if (row.isRead) stats.read += row._count;
+    readStatsMap.set(row.broadcastId, stats);
   }
 
-  const admin = require('firebase-admin');
-  const data = { type: 'ANNOUNCEMENT' };
-  // Firebase's multicast caps at 500 tokens per call.
-  const chunks = [];
-  for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
-
-  let sentCount = 0;
-  const deadTokens = [];
-  for (const chunk of chunks) {
-    try {
-      const res = await admin.messaging().sendEachForMulticast({
-        tokens: chunk,
-        notification: { title, body },
-        data,
-        android: { priority: 'high' },
-        apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: 'default' } } },
-      });
-      sentCount += res.successCount;
-      res.responses.forEach((r, i) => {
-        if (!r.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(r.error?.code)) {
-          deadTokens.push(chunk[i]);
-        }
-      });
-    } catch (err) {
-      logger.error('[broadcast] chunk send failed', { err: err.message });
-    }
-  }
-  if (deadTokens.length) {
-    await prisma.fcmDevice.deleteMany({ where: { token: { in: deadTokens } } }).catch(() => {});
-  }
-
-  await logAdminAction(adminId, adminName, `Broadcast to ${target} (${matchedUsers.length} recipients)`, title);
-  return { ok: true, recipientCount: matchedUsers.length, sentCount };
+  return {
+    items: items.map((b) => shapeBroadcast(b, readStatsMap.get(b.id))),
+    meta: buildPaginationMeta({ total, page, limit }),
+  };
 }
 
 // ─── Activity Logs ────────────────────────────────────────────────────────────
@@ -1552,6 +1862,18 @@ async function listActivityLogs(query = {}) {
   return { items: items.map(shapeLog), meta: buildPaginationMeta({ total, page, limit }) };
 }
 
+// ─── Event registrations ────────────────────────────────────────────────────
+
+async function adminListEventRegistrations(query) {
+  return eventRegistrationService.adminList(query);
+}
+
+async function checkinEventRegistration(adminId, adminName, ticketCode) {
+  const row = await eventRegistrationService.checkin(ticketCode, adminId);
+  if (!row.alreadyCheckedIn) await logAdminAction(adminId, adminName, 'Checked in event registration', row.name);
+  return row;
+}
+
 module.exports = {
   loginAdmin,
   verifyTwoFactorLogin,
@@ -1562,11 +1884,14 @@ module.exports = {
   createAdmin,
   updateAdmin,
   getDashboardStats,
+  getCategoryBreakdown,
   getSignupFunnel,
   listDroppedOffUsers,
   getRevenueStats,
   listUsers,
   getUserById,
+  listUserFollowers,
+  listUserFollowing,
   suspendUser,
   unsuspendUser,
   deleteUser,
@@ -1605,5 +1930,12 @@ module.exports = {
   createCategory,
   updateCategory,
   broadcastNotification,
+  listBroadcasts,
+  executeBroadcast,
+  listPendingBroadcasts,
+  approveBroadcast,
+  rejectBroadcast,
   listActivityLogs,
+  adminListEventRegistrations,
+  checkinEventRegistration,
 };

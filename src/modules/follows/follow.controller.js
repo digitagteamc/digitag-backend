@@ -41,8 +41,13 @@ const userFollowers = asyncHandler(async (req, res) => {
 });
 
 const suggestions = asyncHandler(async (req, res) => {
-  const data = await service.listSuggestions(req.user.id, req.query);
-  return success(res, { message: 'Fetched successfully', data });
+  const { data, meta } = await service.listSuggestions(req.user.id, req.query);
+  return success(res, { message: 'Fetched successfully', data, meta });
 });
 
-module.exports = { follow, unfollow, status, following, followers, suggestions, userFollowing, userFollowers };
+const byCategory = asyncHandler(async (req, res) => {
+  const { data, meta } = await service.listByCategory(req.user, req.query);
+  return success(res, { message: 'Fetched successfully', data, meta });
+});
+
+module.exports = { follow, unfollow, status, following, followers, suggestions, byCategory, userFollowing, userFollowers };

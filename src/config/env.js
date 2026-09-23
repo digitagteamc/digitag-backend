@@ -83,6 +83,11 @@ const env = {
   INSTAGRAM_BUSINESS_ACCOUNT_ID: optional('INSTAGRAM_BUSINESS_ACCOUNT_ID'),
   INSTAGRAM_PAGE_TOKEN: optional('INSTAGRAM_PAGE_TOKEN'), // EAA... Facebook Page token for Business Discovery API
   DIGITAG_INSTAGRAM_USERNAME: optional('DIGITAG_INSTAGRAM_USERNAME', 'digitag.official'),
+  // Set only on production — mirrors every incoming Instagram webhook event
+  // to this URL (the dev server) so DM-based verification can be tested
+  // live on dev too, since Meta only allows one registered webhook URL per
+  // app. Left unset everywhere else so nothing tries to forward anywhere.
+  INSTAGRAM_WEBHOOK_FORWARD_URL: optional('INSTAGRAM_WEBHOOK_FORWARD_URL'),
 
   // YouTube / Facebook OAuth verification
   SOCIAL_OAUTH_REDIRECT_URI: optional('SOCIAL_OAUTH_REDIRECT_URI'), // e.g. https://api.digitag.app/api/v1/social-verifications/callback
@@ -146,6 +151,20 @@ const env = {
   EMAIL_OTP_EXPIRY_MINUTES: toInt(process.env.EMAIL_OTP_EXPIRY_MINUTES, 10),
   EMAIL_OTP_MAX_ATTEMPTS: toInt(process.env.EMAIL_OTP_MAX_ATTEMPTS, 5),
   EMAIL_OTP_RESEND_COOLDOWN_SECONDS: toInt(process.env.EMAIL_OTP_RESEND_COOLDOWN_SECONDS, 30),
+
+  // Public website root — used to build shareable links (e.g. an event
+  // ticket URL) that get embedded in a QR code / sent over WhatsApp.
+  WEBSITE_URL: optional('WEBSITE_URL', 'https://thedigitag.ai'),
+  // Public API root — needed separately from WEBSITE_URL because the QR
+  // image itself is served by this API (GET /event-registrations/:code/qr.png),
+  // not the website, and AiSensy needs a directly fetchable HTTPS URL for it.
+  API_PUBLIC_URL: optional('API_PUBLIC_URL', 'https://api.thedigitag.ai/api/v1'),
+
+  // AiSensy (WhatsApp Business Solution Provider) — event ticket sends.
+  // Blank until a template is created + approved in the AiSensy dashboard;
+  // whatsapp.service.js no-ops with a log line until both are set.
+  AISENSY_API_KEY: optional('AISENSY_API_KEY'),
+  AISENSY_CAMPAIGN_NAME: optional('AISENSY_CAMPAIGN_NAME'),
 
   // Remote kill switch for the whole Premium surface (Upgrade button, Who
   // Viewed My Profile, Boost) — the app reads this from GET /config on

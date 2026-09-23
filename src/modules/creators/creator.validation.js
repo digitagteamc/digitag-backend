@@ -38,6 +38,12 @@ const createCreatorProfileSchema = Joi.object({
   // intentionally stays optional — not every creator has one.
   location: Joi.string().trim().min(1).max(120).required(),
   language: Joi.string().trim().min(1).max(50).required(),
+  // Must additionally match a VERIFIED EmailVerification row for this user
+  // at the service layer (see profileService.ensureEmailVerified).
+  email: email.required().messages({
+    'any.required': 'Email is required',
+    'string.email': 'Enter a valid email address',
+  }),
 });
 
 const updateCreatorProfileSchema = Joi.object(baseCreatorFields).min(1);

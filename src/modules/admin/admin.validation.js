@@ -12,6 +12,7 @@ const listQuery = Joi.object({
   search: Joi.string().trim().max(200).optional().allow(''),
   role: Joi.string().valid('CREATOR', 'FREELANCER', 'BRAND', 'AGENCY').optional(),
   status: Joi.string().valid('active', 'suspended', 'deleted').optional(),
+  userId: uuid.optional(),
 });
 
 const postListQuery = Joi.object({
@@ -21,12 +22,14 @@ const postListQuery = Joi.object({
   role: Joi.string().valid('CREATOR', 'FREELANCER').optional(),
   status: Joi.string().valid('active', 'hidden', 'deleted', 'reported').optional(),
   sort: Joi.string().valid('newest', 'expiry').optional(),
+  userId: uuid.optional(),
 });
 
 const collabListQuery = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
   status: Joi.string().valid('pending', 'active', 'cancelled', 'completed').optional(),
+  userId: uuid.optional(),
 });
 
 const pendingBrandsQuery = Joi.object({
@@ -166,10 +169,50 @@ const bulkUserIds = Joi.object({
 const broadcast = Joi.object({
   title: Joi.string().trim().min(1).max(100).required(),
   body: Joi.string().trim().min(1).max(500).required(),
-  target: Joi.string().valid('all', 'creators', 'freelancers', 'premium', 'incomplete_profile', 'category', 'users').required(),
+  target: Joi.string().valid('all', 'creators', 'freelancers', 'premium', 'incomplete_profile', 'category', 'users', 'segment').required(),
   categoryId: uuid.when('target', { is: 'category', then: Joi.required(), otherwise: Joi.forbidden() }),
   userIds: Joi.array().items(uuid).min(1).max(500)
     .when('target', { is: 'users', then: Joi.required(), otherwise: Joi.forbidden() }),
+  // Custom segment — up to 4 composable filters combined with AND. At least
+  // one must be set; none are individually required.
+  segment: Joi.object({
+    role: Joi.string().valid('CREATOR', 'FREELANCER').optional(),
+    categoryId: uuid.optional(),
+    inactiveDays: Joi.number().integer().min(1).max(365).optional(),
+    isPremium: Joi.boolean().optional(),
+  }).min(1).when('target', { is: 'segment', then: Joi.required(), otherwise: Joi.forbidden() }),
+  // Where tapping the notification takes the recipient — 'NONE' means it just
+  // opens the app with no deep link, same as before this field existed.
+  action: Joi.string().valid('NONE', 'EXPLORE', 'SEARCH', 'COMPLETE_PROFILE', 'PRIVACY_SETTINGS', 'POST', 'USER_PROFILE').default('NONE'),
+  postId: uuid.when('action', { is: 'POST', then: Joi.required(), otherwise: Joi.forbidden() }),
+  profileUserId: uuid.when('action', { is: 'USER_PROFILE', then: Joi.required(), otherwise: Joi.forbidden() }),
+  // Send immediately when omitted; otherwise queued as SCHEDULED and sent by
+  // the sendScheduledBroadcasts poller once due.
+  scheduledFor: Joi.date().iso().greater('now').optional(),
+  imageUrl: Joi.string().uri().optional(),
+});
+
+const broadcastListQuery = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  target: Joi.string().optional(),
+  status: Joi.string().optional(),
+});
+
+const rejectBroadcast = Joi.object({
+  reason: Joi.string().trim().max(300).allow('', null).optional(),
+});
+
+const eventRegistrationListQuery = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  eventSlug: Joi.string().trim().max(100).optional(),
+  search: Joi.string().trim().max(150).optional().allow(''),
+  checkedIn: Joi.string().valid('true', 'false').optional(),
+});
+
+const eventRegistrationCheckin = Joi.object({
+  ticketCode: uuid.required(),
 });
 
 module.exports = {
@@ -203,4 +246,8 @@ module.exports = {
   updateAdType,
   createCelebrity,
   updateCelebrity,
+  broadcastListQuery,
+  rejectBroadcast,
+  eventRegistrationListQuery,
+  eventRegistrationCheckin,
 };

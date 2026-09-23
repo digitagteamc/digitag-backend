@@ -3,6 +3,7 @@ const rateLimit = require('express-rate-limit');
 const controller = require('./admin.controller');
 const { authenticateAdmin, requireSuperAdmin } = require('../../middlewares/adminAuthMiddleware');
 const { validateRequest } = require('../../middlewares/validateMiddleware');
+const { uploadImage } = require('../../middlewares/uploadMiddleware');
 const v = require('./admin.validation');
 
 const router = Router();
@@ -43,6 +44,8 @@ router.patch('/team/:id', requireSuperAdmin, validateRequest({ params: v.idParam
 // Dashboard
 // GET /admin/stats?from=&to=
 router.get('/stats', validateRequest({ query: v.statsQuery }), controller.getStats);
+// GET /admin/stats/categories — completed Creator/Freelancer profiles grouped by category
+router.get('/stats/categories', controller.getCategoryBreakdown);
 // GET /admin/signup-funnel — where/when signups drop off, bucketed into 5-hour IST windows
 router.get('/signup-funnel', controller.getSignupFunnel);
 // GET /admin/signup-funnel/users?from=&to=&role= — the individual users behind those buckets
@@ -59,6 +62,10 @@ router.post('/users/bulk-suspend', requireSuperAdmin, validateRequest({ body: v.
 router.get('/users', validateRequest({ query: v.listQuery }), controller.getUsers);
 // GET /admin/users/:id
 router.get('/users/:id', validateRequest({ params: v.idParam }), controller.getUser);
+// GET /admin/users/:id/followers?page=&limit=
+router.get('/users/:id/followers', validateRequest({ params: v.idParam }), controller.getUserFollowers);
+// GET /admin/users/:id/following?page=&limit=
+router.get('/users/:id/following', validateRequest({ params: v.idParam }), controller.getUserFollowing);
 // POST /admin/users/:id/suspend — Super Admin only (account-level trust & safety action)
 router.post('/users/:id/suspend', requireSuperAdmin, validateRequest({ params: v.idParam }), controller.suspendUser);
 // POST /admin/users/:id/unsuspend
@@ -146,11 +153,29 @@ router.post('/celebrities', requireSuperAdmin, validateRequest({ body: v.createC
 router.patch('/celebrities/:id', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.updateCelebrity }), controller.updateCelebrity);
 
 // Broadcast — Super Admin only (reaches every user's device at once)
+// POST /admin/uploads/image  multipart 'image' — returns { url } to include as
+// the broadcast's imageUrl. Separate from /uploads/image (that one is gated by
+// the regular user JWT middleware, which an admin session doesn't carry).
+router.post('/uploads/image', requireSuperAdmin, uploadImage({ prefix: 'broadcasts' }).single('image'), controller.uploadBroadcastImage);
 // POST /admin/broadcast  { title, body, target }
 router.post('/broadcast', requireSuperAdmin, validateRequest({ body: v.broadcast }), controller.broadcast);
+// GET /admin/broadcasts/pending — approval queue (before /:id-shaped routes below)
+router.get('/broadcasts/pending', requireSuperAdmin, controller.getPendingBroadcasts);
+// POST /admin/broadcasts/:id/approve
+router.post('/broadcasts/:id/approve', requireSuperAdmin, validateRequest({ params: v.idParam }), controller.approveBroadcast);
+// POST /admin/broadcasts/:id/reject  { reason? }
+router.post('/broadcasts/:id/reject', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.rejectBroadcast }), controller.rejectBroadcast);
+// GET /admin/broadcasts?page=&limit=&target=&status= — history list
+router.get('/broadcasts', requireSuperAdmin, validateRequest({ query: v.broadcastListQuery }), controller.getBroadcasts);
 
 // Activity Logs
 // GET /admin/activity-logs?page=&limit=
 router.get('/activity-logs', validateRequest({ query: v.listQuery }), controller.getActivityLogs);
+
+// Event registrations (celebrity meet etc.)
+// GET /admin/event-registrations?eventSlug=&search=&checkedIn=&page=&limit=
+router.get('/event-registrations', validateRequest({ query: v.eventRegistrationListQuery }), controller.getEventRegistrations);
+// POST /admin/event-registrations/checkin  { ticketCode } — staff QR scan check-in
+router.post('/event-registrations/checkin', validateRequest({ body: v.eventRegistrationCheckin }), controller.checkinEventRegistration);
 
 module.exports = router;

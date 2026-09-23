@@ -16,12 +16,25 @@ async function searchProfiles(user, q, limit = 20) {
     const includeCreator = targetRoles.includes(ROLES.CREATOR);
     const includeFreelancer = targetRoles.includes(ROLES.FREELANCER);
 
+    // A query can also be a category name ("Photography") rather than a
+    // person's name — resolve any matching categories up front so accounts
+    // in that category surface too, not just name matches.
+    const matchingCategories = await prisma.category.findMany({
+        where: { name: { contains: query, mode: 'insensitive' }, isActive: true },
+        select: { id: true },
+    });
+    const categoryIds = matchingCategories.map((c) => c.id);
+    const nameOrCategory = (extra) => ({
+        OR: [
+            { name: { contains: query, mode: 'insensitive' } },
+            ...(categoryIds.length ? [{ categories: { hasSome: categoryIds } }] : []),
+        ],
+        ...extra,
+    });
+
     const [creators, freelancers] = await Promise.all([
         includeCreator ? prisma.creatorProfile.findMany({
-            where: {
-                name: { contains: query, mode: 'insensitive' },
-                user: { status: 'ACTIVE', isDiscoverable: true },
-            },
+            where: nameOrCategory({ user: { status: 'ACTIVE', isDiscoverable: true } }),
             select: {
                 id: true,
                 userId: true,
@@ -35,10 +48,7 @@ async function searchProfiles(user, q, limit = 20) {
             take: limit,
         }) : Promise.resolve([]),
         includeFreelancer ? prisma.freelancerProfile.findMany({
-            where: {
-                name: { contains: query, mode: 'insensitive' },
-                user: { status: 'ACTIVE', isDiscoverable: true },
-            },
+            where: nameOrCategory({ user: { status: 'ACTIVE', isDiscoverable: true } }),
             select: {
                 id: true,
                 userId: true,

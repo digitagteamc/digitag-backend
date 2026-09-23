@@ -169,9 +169,10 @@ model User {
   showOnlineStatus             Boolean  @default(true) // hide lastActiveAt from chat partners when off
   shareDataForPersonalization  Boolean  @default(true) // stored preference; not yet read by any analytics/personalization system
   pushNotificationsEnabled     Boolean  @default(true) // gates non-call pushes; incoming calls always ring
-  // Freelancers only: "a Creator posted in one of my categories" — separate
-  // from pushNotificationsEnabled since this is much higher-volume than
-  // collab-based notifications and needs its own off switch.
+  // "Someone in my categories posted a requirement" — Freelancers get this for
+  // Creator posts, Creators get it for Freelancer posts (see post.service.js
+  // createPost). Separate from pushNotificationsEnabled since this is much
+  // higher-volume than collab-based notifications and needs its own off switch.
   notifyCategoryPosts          Boolean  @default(true)
   preferredLanguage            String   @default("English") // stored preference; UI copy itself is English-only today
   createdAt          DateTime   @default(now())
@@ -661,19 +662,26 @@ model Message {
 // is intentionally NOT persisted here — it's transient by nature.
 // -------------------------
 model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  type      String
-  title     String
-  body      String
-  data      Json?
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  userId      String
+  type        String
+  title       String
+  body        String
+  data        Json?
+  isRead      Boolean  @default(false)
+  readAt      DateTime?
+  // Only set for rows created by an admin Broadcast — lets read-rate be
+  // computed live (count isRead=true vs total per broadcastId) instead of
+  // maintaining a counter that could drift out of sync.
+  broadcastId String?
+  createdAt   DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  broadcast Broadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([userId, isRead])
+  @@index([broadcastId])
 }
 
 // -------------------------
@@ -840,8 +848,54 @@ model AdminUser {
   updatedAt          DateTime  @updatedAt
 
   activityLogs AdminActivityLog[]
+  broadcasts   Broadcast[]        @relation("BroadcastCreatedBy")
 
   @@index([email])
+}
+
+// -------------------------
+// Admin broadcast notifications
+// -------------------------
+enum BroadcastStatus {
+  SENT
+  SCHEDULED
+  PENDING_APPROVAL
+  REJECTED
+  FAILED
+}
+
+model Broadcast {
+  id             String          @id @default(uuid())
+  title          String
+  body           String
+  target         String
+  categoryId     String?
+  userIds        String[]        @default([])
+  // Composable "custom segment" filter, only set when target === 'segment':
+  // { role?, categoryId?, inactiveDays?, isPremium? }, combined with AND.
+  segment        Json?
+  action         String          @default("NONE")
+  postId         String?
+  profileUserId  String?
+  imageUrl       String?
+  status         BroadcastStatus @default(SENT)
+  scheduledFor   DateTime?
+  recipientCount Int             @default(0)
+  sentCount      Int             @default(0)
+  createdById    String
+  createdByName  String
+  approvedById   String?
+  approvedByName String?
+  rejectedReason String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  createdBy     AdminUser      @relation("BroadcastCreatedBy", fields: [createdById], references: [id])
+  notifications Notification[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([scheduledFor])
 }
 
 // -------------------------
@@ -894,6 +948,31 @@ model LaunchWaitlist {
   id           String   @id @default(uuid())
   mobileNumber String   @unique
   createdAt    DateTime @default(now())
+}
+
+// Public event registration (e.g. celebrity meet-and-greets) — register on
+// the website, get a ticket with a QR code, staff scan it at the door to
+// check in. eventSlug is the one reusability hook: a future event just needs
+// a new slug + website page content, not a schema/backend change.
+model EventRegistration {
+  id             String    @id @default(uuid())
+  eventSlug      String
+  name           String
+  email          String
+  mobileNumber   String
+  instagramLink  String
+  location       String
+  ticketCode     String    @unique @default(uuid())
+  checkedIn      Boolean   @default(false)
+  checkedInAt    DateTime?
+  checkedInBy    String?
+  whatsappStatus String?
+  createdAt      DateTime  @default(now())
+
+  @@unique([eventSlug, mobileNumber])
+  @@unique([eventSlug, email])
+  @@index([eventSlug])
+  @@index([ticketCode])
 }
 
 enum ReportStatus {

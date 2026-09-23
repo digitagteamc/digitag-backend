@@ -3,6 +3,7 @@ const { success } = require('../../utils/apiResponse');
 const MESSAGES = require('../../constants/messages');
 const STATUS = require('../../constants/statusCodes');
 const service = require('./admin.service');
+const uploadService = require('../uploads/upload.service');
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,11 @@ const getRevenueStats = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
+const getCategoryBreakdown = asyncHandler(async (req, res) => {
+  const data = await service.getCategoryBreakdown();
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
 const getSignupFunnel = asyncHandler(async (req, res) => {
   const data = await service.getSignupFunnel();
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
@@ -80,6 +86,16 @@ const getUsers = asyncHandler(async (req, res) => {
 const getUser = asyncHandler(async (req, res) => {
   const data = await service.getUserById(req.params.id);
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
+const getUserFollowers = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listUserFollowers(req.params.id, req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const getUserFollowing = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listUserFollowing(req.params.id, req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
 });
 
 const suspendUser = asyncHandler(async (req, res) => {
@@ -287,9 +303,34 @@ const updateCategory = asyncHandler(async (req, res) => {
 
 // ─── Broadcast ────────────────────────────────────────────────────────────────
 
+const uploadBroadcastImage = asyncHandler(async (req, res) => {
+  const { url } = await uploadService.handleImageUpload(req.file, { prefix: 'broadcasts' });
+  return success(res, { message: 'Image uploaded', data: { url } });
+});
+
 const broadcast = asyncHandler(async (req, res) => {
   const data = await service.broadcastNotification(req.admin.id, req.admin.name, req.body);
   return success(res, { message: 'Broadcast sent', data });
+});
+
+const getBroadcasts = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listBroadcasts(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const getPendingBroadcasts = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.listPendingBroadcasts(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const approveBroadcast = asyncHandler(async (req, res) => {
+  const data = await service.approveBroadcast(req.admin.id, req.admin.name, req.params.id);
+  return success(res, { message: 'Broadcast approved', data });
+});
+
+const rejectBroadcast = asyncHandler(async (req, res) => {
+  const data = await service.rejectBroadcast(req.admin.id, req.admin.name, req.params.id, req.body.reason);
+  return success(res, { message: 'Broadcast rejected', data });
 });
 
 // ─── Activity Logs ────────────────────────────────────────────────────────────
@@ -297,6 +338,18 @@ const broadcast = asyncHandler(async (req, res) => {
 const getActivityLogs = asyncHandler(async (req, res) => {
   const { items, meta } = await service.listActivityLogs(req.query);
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+// ─── Event registrations ────────────────────────────────────────────────────
+
+const getEventRegistrations = asyncHandler(async (req, res) => {
+  const { items, meta } = await service.adminListEventRegistrations(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const checkinEventRegistration = asyncHandler(async (req, res) => {
+  const data = await service.checkinEventRegistration(req.admin.id, req.admin.name, req.body.ticketCode);
+  return success(res, { message: data.alreadyCheckedIn ? 'Already checked in' : 'Checked in', data });
 });
 
 module.exports = {
@@ -309,11 +362,14 @@ module.exports = {
   createAdmin,
   updateAdmin,
   getStats,
+  getCategoryBreakdown,
   getSignupFunnel,
   getDroppedOffUsers,
   getRevenueStats,
   getUsers,
   getUser,
+  getUserFollowers,
+  getUserFollowing,
   suspendUser,
   unsuspendUser,
   deleteUser,
@@ -351,6 +407,13 @@ module.exports = {
   getCategories,
   createCategory,
   updateCategory,
+  uploadBroadcastImage,
   broadcast,
+  getBroadcasts,
+  getPendingBroadcasts,
+  approveBroadcast,
+  rejectBroadcast,
   getActivityLogs,
+  getEventRegistrations,
+  checkinEventRegistration,
 };

@@ -28,6 +28,7 @@ const subscriptionRoutes = require('../modules/subscriptions/subscription.route'
 const subscriptionWebhookRoutes = require('../modules/subscriptions/subscription.webhook.route');
 const notificationRoutes = require('../modules/notifications/notification.route');
 const waitlistRoutes = require('../modules/waitlist/waitlist.route');
+const eventRegistrationRoutes = require('../modules/eventRegistrations/eventRegistration.route');
 const env = require('../config/env');
 const { optionalAuth } = require('../middlewares/authMiddleware');
 
@@ -76,5 +77,6 @@ router.use('/subscriptions', subscriptionRoutes);
 router.use('/webhooks', subscriptionWebhookRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/waitlist', waitlistRoutes);
+router.use('/event-registrations', eventRegistrationRoutes);
 
 module.exports = router;

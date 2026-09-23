@@ -57,6 +57,19 @@ const webhookReceive = asyncHandler(async (req, res) => {
   // Always respond 200 immediately — Meta retries if we don't
   res.status(200).json({ success: true });
 
+  // Mirror the exact raw payload + original signature to the dev server, so
+  // DM-based verification can be tested live there too — dev shares the same
+  // INSTAGRAM_APP_SECRET, so its own signature check still passes. Fire-and
+  // -forget: a forwarding failure must never affect the real response to
+  // Meta or local processing below. Only set on production (see env.js).
+  if (env.INSTAGRAM_WEBHOOK_FORWARD_URL) {
+    fetch(env.INSTAGRAM_WEBHOOK_FORWARD_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-hub-signature-256': signature || '' },
+      body: req.rawBody,
+    }).catch((err) => console.log('[Instagram] Webhook forward to dev failed:', err.message));
+  }
+
   // Process DMs asynchronously after responding
   const entries = req.body?.entry ?? [];
   for (const entry of entries) {
