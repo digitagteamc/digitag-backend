@@ -11,12 +11,8 @@ const cache = require('../../services/cache/cache.service');
 const categoryService = require('../categories/category.service');
 const logger = require('../../utils/logger');
 const { syncPremiumStatus } = require('../../utils/userHelpers');
-const push = require('../../services/push/push.service');
-const pushService = require('../../services/push/push.service');
-const youtubeChannelService = require('../youtubeChannels/youtubeChannel.service');
-const adTypeService = require('../adTypes/adType.service');
-const celebrityService = require('../celebrities/celebrity.service');
 const eventRegistrationService = require('../eventRegistrations/eventRegistration.service');
+const pushService = require('../../services/push/push.service');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -868,66 +864,6 @@ async function deleteUser(adminId, adminName, userId) {
   return { ok: true };
 }
 
-// ─── Brand approval ───────────────────────────────────────────────────────────
-
-async function listPendingBrands(query = {}) {
-  const { page, limit, skip, take } = parsePagination(query);
-  const where = { approvalStatus: 'PENDING' };
-  const [items, total] = await Promise.all([
-    prisma.brandProfile.findMany({
-      where,
-      skip,
-      take,
-      orderBy: { createdAt: 'asc' },
-      include: { user: { select: { id: true, mobileNumber: true, countryCode: true, createdAt: true } } },
-    }),
-    prisma.brandProfile.count({ where }),
-  ]);
-  return { items, meta: buildPaginationMeta({ total, page, limit }) };
-}
-
-async function approveBrand(adminId, adminName, brandProfileId) {
-  const profile = await prisma.brandProfile.findUnique({ where: { id: brandProfileId } });
-  if (!profile) throw ApiError.notFound('Brand profile not found');
-  if (profile.approvalStatus === 'APPROVED') throw ApiError.conflict('Brand is already approved');
-
-  const updated = await prisma.brandProfile.update({
-    where: { id: brandProfileId },
-    data: { approvalStatus: 'APPROVED', rejectionReason: null, reviewedAt: new Date() },
-  });
-  await logAdminAction(adminId, adminName, 'Approved brand', profile.name || profile.userId);
-
-  await push.sendToUser(profile.userId, (t) =>
-    push.notificationMessage(
-      t,
-      { type: 'BRAND_APPROVED' },
-      { title: 'Brand Approved', body: 'Your brand profile has been approved. You can now post and collaborate.' },
-    ),
-  );
-  return updated;
-}
-
-async function rejectBrand(adminId, adminName, brandProfileId, reason) {
-  const profile = await prisma.brandProfile.findUnique({ where: { id: brandProfileId } });
-  if (!profile) throw ApiError.notFound('Brand profile not found');
-  if (profile.approvalStatus === 'APPROVED') throw ApiError.conflict('Brand is already approved');
-
-  const updated = await prisma.brandProfile.update({
-    where: { id: brandProfileId },
-    data: { approvalStatus: 'REJECTED', rejectionReason: reason || null, reviewedAt: new Date() },
-  });
-  await logAdminAction(adminId, adminName, 'Rejected brand', profile.name || profile.userId);
-
-  await push.sendToUser(profile.userId, (t) =>
-    push.notificationMessage(
-      t,
-      { type: 'BRAND_REJECTED' },
-      { title: 'Brand Application Rejected', body: reason || 'Your brand profile application was not approved.' },
-    ),
-  );
-  return updated;
-}
-
 // Bulk suspend only — bulk delete is intentionally not offered here; a
 // destructive multi-account action deserves the deliberate friction of doing
 // it one at a time.
@@ -1476,54 +1412,6 @@ async function listCategoriesAdmin(query = {}) {
   return { items: items.map(shapeCategory), meta: buildPaginationMeta({ total, page, limit }) };
 }
 
-// ─── Brand Home content catalogs (YouTube Channels, Ad Types, Celebrities) ────
-// Thin wrappers over the shared catalog services (src/modules/_shared/
-// catalogService.js) — same list/create/update shape as categories, just
-// attributed to the acting admin via logAdminAction like every other write
-// action in this file.
-
-async function adminListYoutubeChannels(query) {
-  return youtubeChannelService.adminList(query);
-}
-async function createYoutubeChannel(adminId, adminName, data) {
-  const row = await youtubeChannelService.adminCreate(data);
-  await logAdminAction(adminId, adminName, 'Created YouTube channel', row.name);
-  return row;
-}
-async function updateYoutubeChannel(adminId, adminName, id, data) {
-  const row = await youtubeChannelService.adminUpdate(id, data);
-  await logAdminAction(adminId, adminName, 'Updated YouTube channel', row.name);
-  return row;
-}
-
-async function adminListAdTypes(query) {
-  return adTypeService.adminList(query);
-}
-async function createAdType(adminId, adminName, data) {
-  const row = await adTypeService.adminCreate(data);
-  await logAdminAction(adminId, adminName, 'Created ad type', row.name);
-  return row;
-}
-async function updateAdType(adminId, adminName, id, data) {
-  const row = await adTypeService.adminUpdate(id, data);
-  await logAdminAction(adminId, adminName, 'Updated ad type', row.name);
-  return row;
-}
-
-async function adminListCelebrities(query) {
-  return celebrityService.adminList(query);
-}
-async function createCelebrity(adminId, adminName, data) {
-  const row = await celebrityService.adminCreate(data);
-  await logAdminAction(adminId, adminName, 'Created celebrity', row.name);
-  return row;
-}
-async function updateCelebrity(adminId, adminName, id, data) {
-  const row = await celebrityService.adminUpdate(id, data);
-  await logAdminAction(adminId, adminName, 'Updated celebrity', row.name);
-  return row;
-}
-
 async function createCategory(adminId, adminName, data) {
   const existing = await prisma.category.findFirst({
     where: { OR: [{ name: data.name }, { slug: data.slug }] },
@@ -1895,18 +1783,6 @@ module.exports = {
   suspendUser,
   unsuspendUser,
   deleteUser,
-  listPendingBrands,
-  approveBrand,
-  rejectBrand,
-  adminListYoutubeChannels,
-  createYoutubeChannel,
-  updateYoutubeChannel,
-  adminListAdTypes,
-  createAdType,
-  updateAdType,
-  adminListCelebrities,
-  createCelebrity,
-  updateCelebrity,
   bulkSuspendUsers,
   exportUsersCsv,
   listCreators,

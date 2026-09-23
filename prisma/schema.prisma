@@ -95,12 +95,6 @@ enum ExperienceLevel {
   EXPERT
 }
 
-enum BrandApprovalStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
 enum FreelancerAvailability {
   AVAILABLE
   BUSY
@@ -182,8 +176,6 @@ model User {
   category          Category?          @relation(fields: [categoryId], references: [id])
   creatorProfile    CreatorProfile?
   freelancerProfile FreelancerProfile?
-  brandProfile      BrandProfile?
-  brandRequirements BrandRequirement[]
   posts             Post[]
   refreshTokens     RefreshToken[]
   otps              Otp[]
@@ -311,132 +303,6 @@ model FreelancerProfile {
 
   @@index([categoryId])
   @@index([availability])
-}
-
-// -------------------------
-// Brand profile — companies/brands sourcing collaborations. Unlike Creator/
-// Freelancer, a Brand only goes live after admin review (PAN/GSTIN implies a
-// real business, not just a content profile) — approvalStatus is a separate
-// gate from profile completeness, checked at post/collaboration-create time.
-// -------------------------
-model BrandProfile {
-  id                String              @id @default(uuid())
-  userId            String              @unique
-  // Company/brand name — deliberately called `name`, not `companyName`, to
-  // match every other profile's shared-identity field so generic owner-name
-  // code (shapeUser, post cards, etc.) works on Brand without special-casing.
-  name              String?
-  email             String?             @unique
-  profilePicture    String?
-  profilePictureKey String?
-  bio               String?
-  location          String?
-  pan               String?
-  gstin             String?
-  city              String?
-  state             String?
-  website           String?
-  tagId             String?             @unique
-  approvalStatus    BrandApprovalStatus @default(PENDING)
-  rejectionReason   String?
-  reviewedAt        DateTime?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([approvalStatus])
-}
-
-// -------------------------
-// Brand Home tab content — admin-curated catalogs (YouTube Channels, Ad
-// Types, Celebrities) shown to Brand users for discovery. Same shape/pattern
-// as Category: public read, admin-only write.
-// -------------------------
-model YoutubeChannel {
-  id              String   @id @default(uuid())
-  name            String
-  logoUrl         String?
-  subscriberCount Int      @default(0)
-  // Free-text tag, not a Category FK — this is YouTube's own genre taxonomy
-  // (News, Entertainment, Podcast, Tech, Education...), a different set than
-  // the app's Creator/Freelancer categories.
-  category        String?
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@index([isActive])
-  @@index([category])
-}
-
-model AdType {
-  id          String   @id @default(uuid())
-  name        String
-  iconUrl     String?
-  accentColor String? // hex, e.g. "#7352DD" — matches each tile's own border/accent in the mock
-  description String?
-  sortOrder   Int      @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([isActive])
-}
-
-model Celebrity {
-  id             String   @id @default(uuid())
-  name           String
-  photoUrl       String?
-  role           String? // e.g. "Actor", "Singer", "Comedian" — free text, not an enum (open-ended)
-  followerCount  Int      @default(0)
-  isVerified     Boolean  @default(false)
-  profileUrl     String? // what "View Profile" opens
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  @@index([isActive])
-}
-
-// -------------------------
-// Brand requirement posting ("Who are you looking for?") — a Brand's own
-// compose+publish flow, distinct from Post: Post is free-text only, this
-// needs structured targeting fields no existing model has.
-// -------------------------
-enum BrandRequirementTargetType {
-  CREATORS
-  AGENCIES
-}
-
-enum BrandRequirementStatus {
-  ACTIVE
-  CLOSED
-}
-
-model BrandRequirement {
-  id               String                      @id @default(uuid())
-  brandUserId      String
-  targetType       BrandRequirementTargetType  @default(CREATORS)
-  category         String?
-  creatorCountMin  Int?
-  creatorCountMax  Int?
-  genderPreference String?
-  deliverables     String?
-  // Visibility scope, e.g. "CREATORS_ONLY" — mirrors the "Visible Only to
-  // creators" line in the mock; free text for now, no fixed set confirmed yet.
-  visibility       String?
-  message          String?
-  status           BrandRequirementStatus     @default(ACTIVE)
-  viewCount        Int                         @default(0)
-  createdAt        DateTime                    @default(now())
-  updatedAt        DateTime                    @updatedAt
-
-  brandUser     User            @relation(fields: [brandUserId], references: [id], onDelete: Cascade)
-  collaborations Collaboration[]
-
-  @@index([brandUserId])
-  @@index([status])
 }
 
 // -------------------------
@@ -578,28 +444,25 @@ model FcmDevice {
 // Collaboration requests
 // -------------------------
 model Collaboration {
-  id            String              @id @default(uuid())
-  senderId      String
-  receiverId    String
-  postId        String?
-  requirementId String?
-  message       String?
-  status        CollaborationStatus @default(PENDING)
-  respondedAt   DateTime?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  id          String              @id @default(uuid())
+  senderId    String
+  receiverId  String
+  postId      String?
+  message     String?
+  status      CollaborationStatus @default(PENDING)
+  respondedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 
-  sender       User             @relation("SentCollabs", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver     User             @relation("ReceivedCollabs", fields: [receiverId], references: [id], onDelete: Cascade)
-  post         Post?            @relation(fields: [postId], references: [id], onDelete: SetNull)
-  requirement  BrandRequirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+  sender       User          @relation("SentCollabs", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver     User          @relation("ReceivedCollabs", fields: [receiverId], references: [id], onDelete: Cascade)
+  post         Post?         @relation(fields: [postId], references: [id], onDelete: SetNull)
   conversation Conversation?
 
-  @@unique([senderId, receiverId, postId, requirementId])
+  @@unique([senderId, receiverId, postId])
   @@index([receiverId, status])
   @@index([senderId, status])
   @@index([createdAt])
-  @@index([requirementId])
 }
 
 // -------------------------

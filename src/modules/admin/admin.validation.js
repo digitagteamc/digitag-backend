@@ -32,15 +32,6 @@ const collabListQuery = Joi.object({
   userId: uuid.optional(),
 });
 
-const pendingBrandsQuery = Joi.object({
-  page: Joi.number().integer().min(1).default(1),
-  limit: Joi.number().integer().min(1).max(100).default(20),
-});
-
-const rejectBrand = Joi.object({
-  reason: Joi.string().trim().max(500).allow('', null).optional(),
-});
-
 const reportListQuery = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
@@ -76,40 +67,6 @@ const categoryListQuery = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(50),
   search: Joi.string().trim().max(200).optional().allow(''),
 });
-
-// Shared shape for the Brand Home content catalogs — list query is
-// identical across all three, create/update differ per model.
-const catalogListQuery = categoryListQuery;
-
-const createYoutubeChannel = Joi.object({
-  name: Joi.string().trim().min(1).max(150).required(),
-  logoUrl: Joi.string().uri().allow('', null).optional(),
-  subscriberCount: Joi.number().integer().min(0).default(0),
-  category: Joi.string().trim().max(50).allow('', null).optional(),
-  isActive: Joi.boolean().optional(),
-});
-const updateYoutubeChannel = createYoutubeChannel.fork(['name'], (s) => s.optional());
-
-const createAdType = Joi.object({
-  name: Joi.string().trim().min(1).max(100).required(),
-  iconUrl: Joi.string().uri().allow('', null).optional(),
-  accentColor: Joi.string().trim().max(20).allow('', null).optional(),
-  description: Joi.string().trim().max(300).allow('', null).optional(),
-  sortOrder: Joi.number().integer().default(0),
-  isActive: Joi.boolean().optional(),
-});
-const updateAdType = createAdType.fork(['name'], (s) => s.optional());
-
-const createCelebrity = Joi.object({
-  name: Joi.string().trim().min(1).max(150).required(),
-  photoUrl: Joi.string().uri().allow('', null).optional(),
-  role: Joi.string().trim().max(50).allow('', null).optional(),
-  followerCount: Joi.number().integer().min(0).default(0),
-  isVerified: Joi.boolean().default(false),
-  profileUrl: Joi.string().uri().allow('', null).optional(),
-  isActive: Joi.boolean().optional(),
-});
-const updateCelebrity = createCelebrity.fork(['name'], (s) => s.optional());
 
 const ROLE_VALUES = ['CREATOR', 'FREELANCER', 'BRAND', 'AGENCY'];
 
@@ -237,15 +194,6 @@ module.exports = {
   bulkPostAction,
   bulkUserIds,
   broadcast,
-  pendingBrandsQuery,
-  rejectBrand,
-  catalogListQuery,
-  createYoutubeChannel,
-  updateYoutubeChannel,
-  createAdType,
-  updateAdType,
-  createCelebrity,
-  updateCelebrity,
   broadcastListQuery,
   rejectBroadcast,
   eventRegistrationListQuery,

@@ -109,7 +109,7 @@ async function listFollowers(userId, viewerId) {
   return rows.map((r) => shapeUser(r.follower));
 }
 
-async function listSuggestions(userId, { page, limit, role, location, categorySlug } = {}) {
+async function listSuggestions(userId, { page, limit } = {}) {
   // Was a flat take-only fetch with no page concept at all — every call
   // returned the exact same top-N recent signups, so a caller wanting more
   // had no way to actually get more, only a bigger single batch. Real
@@ -120,13 +120,7 @@ async function listSuggestions(userId, { page, limit, role, location, categorySl
   const me = await prisma.user.findUnique({ where: { id: userId } });
   if (!me) throw ApiError.notFound('User not found');
 
-  const allowedTargetRoles = OPPOSITE_FEED_ROLE[me.role] || [];
-  // Optional further narrowing (e.g. Brand's Home tab wants Creators-only for
-  // one section, Freelancers-only for another) — falls back to every
-  // opposite-role type when not given, same as before. Ignores a role not
-  // actually in the allowed set rather than erroring, so a bad/stale param
-  // just behaves like it wasn't passed.
-  const targetRoles = role && allowedTargetRoles.includes(role) ? [role] : allowedTargetRoles;
+  const targetRoles = OPPOSITE_FEED_ROLE[me.role] || [];
 
   // Users I already follow — exclude from suggestions.
   const following = await prisma.follow.findMany({
@@ -141,34 +135,6 @@ async function listSuggestions(userId, { page, limit, role, location, categorySl
     isProfileCompleted: true,
     id: { notIn: Array.from(excludeIds) },
   };
-  // Both location and category live on whichever profile matches that row's
-  // own role — an OR across both relations is safe even when targetRoles is
-  // narrowed to one, since e.g. a CREATOR row's freelancerProfile is always
-  // null anyway. Collected as separate AND entries (not both merged into one
-  // where.OR) so passing both filters at once means "matches this location
-  // AND this category", not "matches either".
-  const andFilters = [];
-  if (location) {
-    andFilters.push({
-      OR: [
-        { creatorProfile: { location: { contains: location, mode: 'insensitive' } } },
-        { freelancerProfile: { location: { contains: location, mode: 'insensitive' } } },
-      ],
-    });
-  }
-  if (categorySlug) {
-    const cat = await prisma.category.findUnique({ where: { slug: categorySlug }, select: { id: true } });
-    // An unknown slug should return zero results, not silently ignore the
-    // filter — an id that can never match does exactly that.
-    const catId = cat?.id || '__no_match__';
-    andFilters.push({
-      OR: [
-        { creatorProfile: { categories: { has: catId } } },
-        { freelancerProfile: { categories: { has: catId } } },
-      ],
-    });
-  }
-  if (andFilters.length) where.AND = andFilters;
 
   const [total, candidates] = await Promise.all([
     prisma.user.count({ where }),

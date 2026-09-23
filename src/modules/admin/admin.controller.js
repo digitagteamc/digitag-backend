@@ -113,23 +113,6 @@ const deleteUser = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.ADMIN.USER_DELETED, data });
 });
 
-// ─── Brand approval ───────────────────────────────────────────────────────────
-
-const getPendingBrands = asyncHandler(async (req, res) => {
-  const { items, meta } = await service.listPendingBrands(req.query);
-  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
-});
-
-const approveBrand = asyncHandler(async (req, res) => {
-  const data = await service.approveBrand(req.admin.id, req.admin.name, req.params.id);
-  return success(res, { message: 'Brand approved', data });
-});
-
-const rejectBrand = asyncHandler(async (req, res) => {
-  const data = await service.rejectBrand(req.admin.id, req.admin.name, req.params.id, req.body.reason);
-  return success(res, { message: 'Brand rejected', data });
-});
-
 const bulkSuspendUsers = asyncHandler(async (req, res) => {
   const data = await service.bulkSuspendUsers(req.admin.id, req.admin.name, req.body.userIds);
   return success(res, { message: 'Users suspended', data });
@@ -250,47 +233,6 @@ const getCategories = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
 });
 
-// ─── Brand Home content catalogs ───────────────────────────────────────────────
-
-const getYoutubeChannelsAdmin = asyncHandler(async (req, res) => {
-  const { items, meta } = await service.adminListYoutubeChannels(req.query);
-  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
-});
-const createYoutubeChannel = asyncHandler(async (req, res) => {
-  const data = await service.createYoutubeChannel(req.admin.id, req.admin.name, req.body);
-  return success(res, { statusCode: STATUS.CREATED, message: MESSAGES.GENERIC.CREATED, data });
-});
-const updateYoutubeChannel = asyncHandler(async (req, res) => {
-  const data = await service.updateYoutubeChannel(req.admin.id, req.admin.name, req.params.id, req.body);
-  return success(res, { message: MESSAGES.GENERIC.UPDATED, data });
-});
-
-const getAdTypesAdmin = asyncHandler(async (req, res) => {
-  const { items, meta } = await service.adminListAdTypes(req.query);
-  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
-});
-const createAdType = asyncHandler(async (req, res) => {
-  const data = await service.createAdType(req.admin.id, req.admin.name, req.body);
-  return success(res, { statusCode: STATUS.CREATED, message: MESSAGES.GENERIC.CREATED, data });
-});
-const updateAdType = asyncHandler(async (req, res) => {
-  const data = await service.updateAdType(req.admin.id, req.admin.name, req.params.id, req.body);
-  return success(res, { message: MESSAGES.GENERIC.UPDATED, data });
-});
-
-const getCelebritiesAdmin = asyncHandler(async (req, res) => {
-  const { items, meta } = await service.adminListCelebrities(req.query);
-  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
-});
-const createCelebrity = asyncHandler(async (req, res) => {
-  const data = await service.createCelebrity(req.admin.id, req.admin.name, req.body);
-  return success(res, { statusCode: STATUS.CREATED, message: MESSAGES.GENERIC.CREATED, data });
-});
-const updateCelebrity = asyncHandler(async (req, res) => {
-  const data = await service.updateCelebrity(req.admin.id, req.admin.name, req.params.id, req.body);
-  return success(res, { message: MESSAGES.GENERIC.UPDATED, data });
-});
-
 const createCategory = asyncHandler(async (req, res) => {
   const data = await service.createCategory(req.admin.id, req.admin.name, req.body);
   return success(res, { statusCode: STATUS.CREATED, message: MESSAGES.GENERIC.CREATED, data });
@@ -373,18 +315,6 @@ module.exports = {
   suspendUser,
   unsuspendUser,
   deleteUser,
-  getPendingBrands,
-  approveBrand,
-  rejectBrand,
-  getYoutubeChannelsAdmin,
-  createYoutubeChannel,
-  updateYoutubeChannel,
-  getAdTypesAdmin,
-  createAdType,
-  updateAdType,
-  getCelebritiesAdmin,
-  createCelebrity,
-  updateCelebrity,
   bulkSuspendUsers,
   exportUsersCsv,
   getCreators,

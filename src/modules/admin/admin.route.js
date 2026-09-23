@@ -73,14 +73,6 @@ router.post('/users/:id/unsuspend', requireSuperAdmin, validateRequest({ params:
 // DELETE /admin/users/:id
 router.delete('/users/:id', requireSuperAdmin, validateRequest({ params: v.idParam }), controller.deleteUser);
 
-// Brand approval
-// GET /admin/brands/pending?page=&limit=
-router.get('/brands/pending', validateRequest({ query: v.pendingBrandsQuery }), controller.getPendingBrands);
-// POST /admin/brands/:id/approve — Super Admin only, same trust-level as suspend/delete
-router.post('/brands/:id/approve', requireSuperAdmin, validateRequest({ params: v.idParam }), controller.approveBrand);
-// POST /admin/brands/:id/reject
-router.post('/brands/:id/reject', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.rejectBrand }), controller.rejectBrand);
-
 // Creators
 // GET /admin/creators?page=&limit=&search=
 router.get('/creators', validateRequest({ query: v.listQuery }), controller.getCreators);
@@ -138,19 +130,6 @@ router.get('/categories', validateRequest({ query: v.categoryListQuery }), contr
 router.post('/categories', requireSuperAdmin, validateRequest({ body: v.createCategory }), controller.createCategory);
 // PATCH /admin/categories/:id
 router.patch('/categories/:id', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.updateCategory }), controller.updateCategory);
-
-// Brand Home content catalogs — same list-any-admin, write-super-admin-only split as Categories
-router.get('/youtube-channels', validateRequest({ query: v.catalogListQuery }), controller.getYoutubeChannelsAdmin);
-router.post('/youtube-channels', requireSuperAdmin, validateRequest({ body: v.createYoutubeChannel }), controller.createYoutubeChannel);
-router.patch('/youtube-channels/:id', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.updateYoutubeChannel }), controller.updateYoutubeChannel);
-
-router.get('/ad-types', validateRequest({ query: v.catalogListQuery }), controller.getAdTypesAdmin);
-router.post('/ad-types', requireSuperAdmin, validateRequest({ body: v.createAdType }), controller.createAdType);
-router.patch('/ad-types/:id', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.updateAdType }), controller.updateAdType);
-
-router.get('/celebrities', validateRequest({ query: v.catalogListQuery }), controller.getCelebritiesAdmin);
-router.post('/celebrities', requireSuperAdmin, validateRequest({ body: v.createCelebrity }), controller.createCelebrity);
-router.patch('/celebrities/:id', requireSuperAdmin, validateRequest({ params: v.idParam, body: v.updateCelebrity }), controller.updateCelebrity);
 
 // Broadcast — Super Admin only (reaches every user's device at once)
 // POST /admin/uploads/image  multipart 'image' — returns { url } to include as
