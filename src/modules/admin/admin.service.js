@@ -1531,6 +1531,12 @@ function shapeBroadcast(b, readStats) {
     readRate: stats.total ? stats.read / stats.total : 0,
     createdByName: b.createdByName,
     createdAt: b.createdAt,
+    // The actual fire time for a scheduled broadcast — createdAt is only
+    // when the admin *set it up*, not when it goes/went out. No separate
+    // sentAt field exists, but the 60s poller (sendScheduledBroadcasts.js)
+    // executes at this timestamp, so it's accurate to within one poll
+    // interval for scheduled broadcasts that have already sent too.
+    scheduledFor: b.scheduledFor,
   };
 }
 
