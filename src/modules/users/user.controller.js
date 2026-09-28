@@ -23,6 +23,11 @@ const getByTag = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
 });
 
+const getPublicProfile = asyncHandler(async (req, res) => {
+  const data = await service.getPublicProfileByTag(req.params.tagId);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
 const getStats = asyncHandler(async (req, res) => {
   const data = await service.getUserStats(req.params.id);
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
@@ -50,4 +55,4 @@ const exportMyData = asyncHandler(async (req, res) => {
   res.send(JSON.stringify(data, null, 2));
 });
 
-module.exports = { onboardingStatus, getByTag, getById, getStats, getMyStats, getProfileViewers, getPrivacySettings, updatePrivacySettings, exportMyData };
+module.exports = { onboardingStatus, getByTag, getPublicProfile, getById, getStats, getMyStats, getProfileViewers, getPrivacySettings, updatePrivacySettings, exportMyData };

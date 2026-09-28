@@ -27,6 +27,11 @@ router.get('/me/profile-viewers', authenticate, controller.getProfileViewers);
 // Profile browsing is public (Apple 5.1.1 — viewing a creator/freelancer profile isn't
 // account-based). Must be registered before /:id, otherwise "by-tag" is swallowed as an :id.
 router.get('/by-tag/:tagId', optionalAuth, validateRequest({ params: tagParam }), controller.getByTag);
+// Shareable public profile page (thedigitag.ai/creator/:tag, /freelancer/:tag)
+// — no auth at all, not even optionalAuth, since anyone with the link should
+// see it whether or not they have a DigiTag account. Same "before /:id" note
+// as by-tag above.
+router.get('/public/:tagId', validateRequest({ params: tagParam }), controller.getPublicProfile);
 router.get('/:id/stats', optionalAuth, validateRequest({ params: idParam }), controller.getStats);
 router.get('/:id', optionalAuth, validateRequest({ params: idParam }), controller.getById);
 

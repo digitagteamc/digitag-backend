@@ -13,6 +13,84 @@ async function getUserIdByTag(tagId) {
   return { userId: match.userId };
 }
 
+/** Public, shareable "business card" page — thedigitag.ai/creator/:tag and
+ *  /freelancer/:tag, for sending a full profile to someone who doesn't have
+ *  (or hasn't opened) the app. Deliberately a separate function from
+ *  getUserById rather than a parameter on it: getUserById's whole contract
+ *  is "never mobileNumber, for anyone" (see its own comment), and this is a
+ *  genuine, isolated exception to that — the product decision here is that
+ *  a Freelancer's mobile number IS shown on their own public page (they're
+ *  offering a service; being reachable is the point), while a Creator's
+ *  stays hidden, same as everywhere else in the app. No auth at all, not
+ *  even optionalAuth — truly public, since anyone with the link should see
+ *  it whether or not they have a DigiTag account.
+ */
+async function getPublicProfileByTag(tagId) {
+  const [creator, freelancer] = await Promise.all([
+    prisma.creatorProfile.findFirst({ where: { tagId: { equals: tagId, mode: 'insensitive' } }, select: { userId: true } }),
+    prisma.freelancerProfile.findFirst({ where: { tagId: { equals: tagId, mode: 'insensitive' } }, select: { userId: true } }),
+  ]);
+  const match = creator || freelancer;
+  if (!match) throw ApiError.notFound('Profile not found');
+
+  const user = await prisma.user.findUnique({
+    // status: 'ACTIVE' in the where, not just trusting the tag lookup — a
+    // deleted/suspended user's public page must 404, same as getUserById.
+    where: { id: match.userId, status: 'ACTIVE' },
+    select: {
+      id: true,
+      role: true,
+      mobileNumber: true,
+      createdAt: true,
+      isPremium: true,
+      category: { select: { id: true, name: true, slug: true } },
+      creatorProfile: true,
+      freelancerProfile: true,
+    },
+  });
+  if (!user) throw ApiError.notFound('Profile not found');
+
+  const [followerCount, followingCount, collabCount, instagramAccounts] = await Promise.all([
+    prisma.follow.count({ where: { followingId: user.id } }),
+    prisma.follow.count({ where: { followerId: user.id } }),
+    prisma.collaboration.count({
+      where: { status: 'ACCEPTED', OR: [{ senderId: user.id }, { receiverId: user.id }] },
+    }),
+    prisma.instagramVerification.findMany({
+      where: { userId: user.id, status: 'VERIFIED' },
+      select: { id: true, instagramUsername: true, followers: true, verifiedAt: true },
+      orderBy: { verifiedAt: 'asc' },
+    }),
+  ]);
+
+  // Same category-UUID-to-name/slug resolution as getUserById.
+  const categoryMap = await categoryService.resolveCategoryMap([
+    ...(user.creatorProfile?.categories || []),
+    ...(user.freelancerProfile?.categories || []),
+  ]);
+  const attachResolvedCategories = (profile) => {
+    if (!profile) return profile;
+    const resolved = (profile.categories || []).map((cid) => categoryMap.get(cid)).filter(Boolean);
+    return { ...profile, categorySlugs: resolved.map((c) => c.slug), categoryNames: resolved.map((c) => c.name) };
+  };
+
+  return {
+    id: user.id,
+    role: user.role,
+    createdAt: user.createdAt,
+    isPremium: user.isPremium,
+    category: user.category,
+    // The one deliberate exception to "never mobileNumber" — see doc comment above.
+    mobileNumber: user.role === ROLES.FREELANCER ? user.mobileNumber : null,
+    creatorProfile: attachResolvedCategories(user.creatorProfile),
+    freelancerProfile: attachResolvedCategories(user.freelancerProfile),
+    followerCount,
+    followingCount,
+    collabCount,
+    instagramAccounts,
+  };
+}
+
 // Fire-and-forget — a logging failure must never break loading someone's
 // profile. Self-views don't count (viewing your own profile isn't a "view"),
 // and there's no viewerId at all for guests. Upsert on the unique pair keeps
@@ -236,6 +314,7 @@ async function exportMyData(userId) {
 module.exports = {
   getUserById,
   getUserIdByTag,
+  getPublicProfileByTag,
   getUserStats,
   getProfileViewers,
   recomputeProfileCompletion,
