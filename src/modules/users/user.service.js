@@ -125,13 +125,14 @@ async function getProfileViewers(userId) {
           role: true,
           creatorProfile: { select: { name: true, profilePicture: true } },
           freelancerProfile: { select: { name: true, profilePicture: true } },
+          brandProfile: { select: { name: true, profilePicture: true } },
         },
       },
     },
   });
 
   return views.map((v) => {
-    const profile = v.viewer.creatorProfile || v.viewer.freelancerProfile;
+    const profile = v.viewer.creatorProfile || v.viewer.freelancerProfile || v.viewer.brandProfile;
     return {
       userId: v.viewer.id,
       role: v.viewer.role,
@@ -159,6 +160,14 @@ async function getUserById(id, viewerId) {
         category: { select: { id: true, name: true, slug: true } },
         creatorProfile: true,
         freelancerProfile: true,
+        // Public brand card — PAN/GSTIN and contact person stay private.
+        brandProfile: {
+          select: {
+            id: true, name: true, profilePicture: true, industry: true, website: true, bio: true,
+            city: true, state: true, companySize: true, instagramHandle: true, youtubeHandle: true, tagId: true,
+            approvalStatus: true,
+          },
+        },
       },
     }),
     prisma.follow.count({ where: { followingId: id } }),
@@ -203,11 +212,13 @@ async function getUserById(id, viewerId) {
 async function recomputeProfileCompletion(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { creatorProfile: true, freelancerProfile: true },
+    include: { creatorProfile: true, freelancerProfile: true, brandProfile: true },
   });
   if (!user) return false;
 
-  const profile = user.role === ROLES.CREATOR ? user.creatorProfile : user.freelancerProfile;
+  const profile = user.role === ROLES.CREATOR
+    ? user.creatorProfile
+    : user.role === ROLES.BRAND ? user.brandProfile : user.freelancerProfile;
   // A profile counts as complete once the user has given a name. Category is
   // optional at signup; selectors can populate it later without re-gating the UX.
   const isCompleted = Boolean(profile && profile.name);
@@ -284,7 +295,7 @@ async function exportMyData(userId) {
       select: {
         id: true, mobileNumber: true, countryCode: true, role: true, isVerified: true,
         isProfileCompleted: true, isPremium: true, createdAt: true,
-        creatorProfile: true, freelancerProfile: true,
+        creatorProfile: true, freelancerProfile: true, brandProfile: true,
         ...PRIVACY_FIELDS,
       },
     }),

@@ -1,6 +1,8 @@
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
-const { OPPOSITE_FEED_ROLE } = require('../../constants/roles');
+const { COLLAB_TARGET_ROLES, ROLES } = require('../../constants/roles');
+const { displayName } = require('../../utils/userHelpers');
+const { assertApprovedBrand } = require('../brands/brandApproval');
 const push = require('../../services/push/push.service');
 const { assertNotBlocked } = require('../blocks/block.service');
 
@@ -13,12 +15,14 @@ const userInclude = {
     isPremium: true,
     creatorProfile: { select: { name: true, profilePicture: true, location: true } },
     freelancerProfile: { select: { name: true, profilePicture: true, location: true } },
+    brandProfile: { select: { name: true, profilePicture: true, city: true } },
   },
 };
 
 const postInclude = {
   select: {
     id: true,
+    title: true,
     description: true,
     collaborationType: true,
     imageUrl: true,
@@ -77,6 +81,7 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
     throw ApiError.badRequest('You cannot send a collaboration request to yourself');
   }
   await assertNotBlocked(senderId, receiverId);
+  if (senderRole === ROLES.BRAND) await assertApprovedBrand(senderId);
 
   const quota = await getCollabRequestQuota(senderId);
   if (quota.limit !== null && quota.used >= quota.limit) {
@@ -88,9 +93,14 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
   const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
   if (!receiver) throw ApiError.notFound('Recipient user not found');
 
-  const allowedReceiverRoles = OPPOSITE_FEED_ROLE[senderRole] || [];
+  const allowedReceiverRoles = COLLAB_TARGET_ROLES[senderRole] || [];
   if (!allowedReceiverRoles.includes(receiver.role)) {
     throw ApiError.forbidden('You can only collaborate with users of a different role');
+  }
+  // Brands are reached only through the "Collab" button on one of their
+  // requirement posts — never a blind profile-level request.
+  if (receiver.role === ROLES.BRAND && !postId) {
+    throw ApiError.badRequest('Pick one of the brand\'s posts to collaborate on');
   }
 
   if (postId) {
@@ -104,6 +114,9 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
     // collaborated on it.
     if (post.status === 'COMPLETED') throw ApiError.conflict('This collaboration opportunity has already been filled');
     if (post.status === 'CLOSED') throw ApiError.notFound('Post not found');
+    if (post.role === ROLES.BRAND && !post.targetRoles.includes(senderRole)) {
+      throw ApiError.forbidden('This brand requirement is not open to your role');
+    }
   }
 
   // Prevent duplicate PENDING requests for the same (sender, receiver, post).
@@ -133,7 +146,7 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
         include: { sender: userInclude, receiver: userInclude, post: postInclude },
       });
 
-  const senderName = collab.sender?.creatorProfile?.name || collab.sender?.freelancerProfile?.name || 'Someone';
+  const senderName = displayName(collab.sender);
   await push.sendToUser(receiverId, (t) =>
     push.notificationMessage(
       t,
@@ -165,15 +178,26 @@ async function respondToCollaboration(userId, collabId, action) {
   const collab = await prisma.collaboration.findUnique({ where: { id: collabId } });
   if (!collab) throw ApiError.notFound('Collaboration request not found');
 
-  // COMPLETE action: only the creator party can mark work as done
+  // COMPLETE action: only the hiring party can mark work as done — the Brand
+  // in a brand collaboration, otherwise the Creator.
   if (action === 'COMPLETE') {
     const isParty = collab.senderId === userId || collab.receiverId === userId;
     if (!isParty) throw ApiError.forbidden('You are not part of this collaboration');
     if (collab.status !== 'ACCEPTED') {
       throw ApiError.badRequest('Only accepted collaborations can be marked complete');
     }
-    const caller = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (caller?.role !== 'CREATOR') throw ApiError.forbidden('Only a Creator can mark collaboration as complete');
+    const parties = await prisma.user.findMany({
+      where: { id: { in: [collab.senderId, collab.receiverId] } },
+      select: { id: true, role: true },
+    });
+    const hasBrand = parties.some((p) => p.role === ROLES.BRAND);
+    const callerRole = parties.find((p) => p.id === userId)?.role;
+    if (hasBrand && callerRole !== ROLES.BRAND) {
+      throw ApiError.forbidden('Only the Brand can mark this collaboration as complete');
+    }
+    if (!hasBrand && callerRole !== ROLES.CREATOR) {
+      throw ApiError.forbidden('Only a Creator can mark collaboration as complete');
+    }
 
     const updated = await prisma.collaboration.update({
       where: { id: collabId },
@@ -186,7 +210,7 @@ async function respondToCollaboration(userId, collabId, action) {
     const iAmSender = updated.senderId === userId;
     const otherPartyId = iAmSender ? updated.receiverId : updated.senderId;
     const completer = iAmSender ? updated.sender : updated.receiver;
-    const completerName = completer?.creatorProfile?.name || completer?.freelancerProfile?.name || 'Someone';
+    const completerName = displayName(completer);
     await push.sendToUser(otherPartyId, (t) =>
       push.notificationMessage(
         t,
@@ -199,6 +223,10 @@ async function respondToCollaboration(userId, collabId, action) {
   }
 
   if (collab.receiverId !== userId) throw ApiError.forbidden('Only the recipient can respond');
+  if (action === 'ACCEPT') {
+    const me = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (me?.role === ROLES.BRAND) await assertApprovedBrand(userId);
+  }
   if (collab.status !== 'PENDING') {
     throw ApiError.badRequest(`Request is already ${collab.status.toLowerCase()}`);
   }
@@ -241,7 +269,7 @@ async function respondToCollaboration(userId, collabId, action) {
     return updatedCollab;
   });
 
-  const responderName = updated.receiver?.creatorProfile?.name || updated.receiver?.freelancerProfile?.name || 'Someone';
+  const responderName = displayName(updated.receiver);
   const notifBody = nextStatus === 'ACCEPTED'
     ? `${responderName} accepted your collaboration request`
     : `${responderName} declined your collaboration request`;

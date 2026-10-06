@@ -24,6 +24,11 @@ const subscriptionWebhookRoutes = require('../modules/subscriptions/subscription
 const notificationRoutes = require('../modules/notifications/notification.route');
 const waitlistRoutes = require('../modules/waitlist/waitlist.route');
 const eventRegistrationRoutes = require('../modules/eventRegistrations/eventRegistration.route');
+const brandRoutes = require('../modules/brands/brand.route');
+const channelRoutes = require('../modules/channels/channel.route');
+const adRequestRoutes = require('../modules/ad-requests/adRequest.route');
+const crmRoutes = require('../modules/crm/crm.route');
+const brandAdminRoutes = require('../modules/brand-admin/brandAdmin.route');
 const env = require('../config/env');
 const { optionalAuth } = require('../middlewares/authMiddleware');
 
@@ -45,6 +50,10 @@ router.get('/config', optionalAuth, (req, res) => {
 });
 
 router.use('/auth', authRoutes);
+// Brand-side admin pages (brands approval, YouTube channels, ad types,
+// celebrities). Before /admin because the admin router authenticates every
+// request that reaches it; this one authenticates per route.
+router.use('/admin', brandAdminRoutes);
 router.use('/admin', adminRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/users', userRoutes);
@@ -68,5 +77,9 @@ router.use('/webhooks', subscriptionWebhookRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/waitlist', waitlistRoutes);
 router.use('/event-registrations', eventRegistrationRoutes);
+router.use('/brands', brandRoutes);
+router.use('/channels', channelRoutes);
+router.use('/ad-requests', adRequestRoutes);
+router.use('/crm', crmRoutes);
 
 module.exports = router;

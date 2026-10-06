@@ -9,26 +9,28 @@ const admin = require('../../config/firebase');
 const categoryService = require('../categories/category.service');
 const razorpay = require('../../config/razorpay');
 const logger = require('../../utils/logger');
+const { roleProfile } = require('../../utils/userHelpers');
 
 /**
  * One phone number = one account. The User row's `role` field represents the
- * currently-active session role (Creator or Freelancer), not a one-time choice.
+ * currently-active session role (Creator, Freelancer or Brand), not a one-time choice.
  * A single account can own both `creatorProfile` and `freelancerProfile` rows
  * and can freely switch between them via the /auth/switch-role endpoint.
  */
 
 async function buildProfileMap(user) {
-    if (!user) return { CREATOR: false, FREELANCER: false };
+    if (!user) return { CREATOR: false, FREELANCER: false, BRAND: false };
     const query = user.accountId
         ? { accountId: user.accountId }
         : { mobileNumber: user.mobileNumber };
     const allUsers = await prisma.user.findMany({
         where: query,
-        include: { creatorProfile: true, freelancerProfile: true }
+        include: { creatorProfile: true, freelancerProfile: true, brandProfile: true }
     });
     return {
         CREATOR: Boolean(allUsers.find(u => u.role === 'CREATOR' && u.creatorProfile && u.creatorProfile.name)),
         FREELANCER: Boolean(allUsers.find(u => u.role === 'FREELANCER' && u.freelancerProfile && u.freelancerProfile.name)),
+        BRAND: Boolean(allUsers.find(u => u.role === 'BRAND' && u.brandProfile && u.brandProfile.name)),
     };
 }
 
@@ -57,21 +59,21 @@ async function buildProfileMap(user) {
 async function findOrCreateRoleUser(accountId, role, createData) {
     const existing = await prisma.user.findFirst({
         where: { accountId, role, status: { not: 'DELETED' } },
-        include: { creatorProfile: true, freelancerProfile: true },
+        include: { creatorProfile: true, freelancerProfile: true, brandProfile: true },
     });
     if (existing) return { user: existing, isNewUser: false };
 
     try {
         const created = await prisma.user.create({
             data: { accountId, role, ...createData },
-            include: { creatorProfile: true, freelancerProfile: true },
+            include: { creatorProfile: true, freelancerProfile: true, brandProfile: true },
         });
         return { user: created, isNewUser: true };
     } catch (err) {
         if (err.code === 'P2002') {
             const winner = await prisma.user.findFirst({
                 where: { accountId, role, status: { not: 'DELETED' } },
-                include: { creatorProfile: true, freelancerProfile: true },
+                include: { creatorProfile: true, freelancerProfile: true, brandProfile: true },
             });
             if (winner) return { user: winner, isNewUser: false };
         }
@@ -143,13 +145,13 @@ async function completeOtp({
 
     let account = await prisma.account.findUnique({
         where: { mobileNumber },
-        include: { users: { include: { creatorProfile: true, freelancerProfile: true } } },
+        include: { users: { include: { creatorProfile: true, freelancerProfile: true, brandProfile: true } } },
     });
 
     if (!account) {
         const legacyUser = await prisma.user.findFirst({
             where: { mobileNumber, accountId: null },
-            include: { creatorProfile: true, freelancerProfile: true }
+            include: { creatorProfile: true, freelancerProfile: true, brandProfile: true }
         });
 
         // upsert instead of create — two concurrent verify calls for the same
@@ -173,7 +175,7 @@ async function completeOtp({
 
         account = await prisma.account.findUnique({
             where: { id: account.id },
-            include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
+            include: { users: { include: { creatorProfile: true, freelancerProfile: true, brandProfile: true } } }
         });
     }
 
@@ -197,7 +199,7 @@ async function completeOtp({
             lastLoginAt: new Date(),
             categoryId: categoryId || foundOrCreated.categoryId,
         },
-        include: { creatorProfile: true, freelancerProfile: true },
+        include: { creatorProfile: true, freelancerProfile: true, brandProfile: true },
     });
 
     const { accessToken, refreshToken } = await tokenService.issueTokens(user, context);
@@ -241,7 +243,7 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
 
     let account = await prisma.account.findUnique({
         where: { mobileNumber: number },
-        include: { users: { include: { creatorProfile: true, freelancerProfile: true } } },
+        include: { users: { include: { creatorProfile: true, freelancerProfile: true, brandProfile: true } } },
     });
 
     if (account) {
@@ -256,7 +258,7 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
     } else {
         const legacyUser = await prisma.user.findFirst({
             where: { mobileNumber: number, accountId: null },
-            include: { creatorProfile: true, freelancerProfile: true }
+            include: { creatorProfile: true, freelancerProfile: true, brandProfile: true }
         });
 
         if (legacyUser && legacyUser.status === 'SUSPENDED') {
@@ -279,7 +281,7 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
 
         account = await prisma.account.findUnique({
             where: { id: account.id },
-            include: { users: { include: { creatorProfile: true, freelancerProfile: true } } }
+            include: { users: { include: { creatorProfile: true, freelancerProfile: true, brandProfile: true } } }
         });
     }
 
@@ -298,7 +300,7 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
             lastLoginAt: new Date(),
             categoryId: categoryId || foundOrCreated.categoryId,
         },
-        include: { creatorProfile: true, freelancerProfile: true },
+        include: { creatorProfile: true, freelancerProfile: true, brandProfile: true },
     });
 
     const { accessToken, refreshToken } = await tokenService.issueTokens(user, context);
@@ -334,6 +336,7 @@ async function getMe(userId) {
             category: { select: { id: true, name: true, slug: true } },
             creatorProfile: { include: { category: { select: { id: true, name: true, slug: true } } } },
             freelancerProfile: { include: { category: { select: { id: true, name: true, slug: true } } } },
+            brandProfile: true,
         },
     });
     if (!user) throw ApiError.notFound();
@@ -367,8 +370,8 @@ async function getMe(userId) {
  * for that role under the same Account, and issue tokens for it.
  */
 async function switchRole(userId, role) {
-    if (role !== ROLES.CREATOR && role !== ROLES.FREELANCER) {
-        throw ApiError.badRequest('Role must be CREATOR or FREELANCER');
+    if (role !== ROLES.CREATOR && role !== ROLES.FREELANCER && role !== ROLES.BRAND) {
+        throw ApiError.badRequest('Role must be CREATOR, FREELANCER or BRAND');
     }
     
     const currentUser = await prisma.user.findUnique({
@@ -404,7 +407,7 @@ async function switchRole(userId, role) {
     const targetUser = targetIsNew ? foundOrCreated : await prisma.user.update({
         where: { id: foundOrCreated.id },
         data: { lastLoginAt: new Date() },
-        include: { creatorProfile: true, freelancerProfile: true }
+        include: { creatorProfile: true, freelancerProfile: true, brandProfile: true }
     });
 
     const { accessToken, refreshToken } = await tokenService.issueTokens(targetUser);
@@ -438,6 +441,7 @@ async function deleteAccount(userId) {
                             subscription: true,
                             creatorProfile: { select: { tagId: true, email: true } },
                             freelancerProfile: { select: { tagId: true, email: true } },
+                            brandProfile: { select: { tagId: true, email: true } },
                         }
                     }
                 }
@@ -445,6 +449,7 @@ async function deleteAccount(userId) {
             subscription: true,
             creatorProfile: { select: { tagId: true } },
             freelancerProfile: { select: { tagId: true } },
+            brandProfile: { select: { tagId: true } },
         },
     });
     if (!user) throw ApiError.notFound('Account not found');
@@ -517,6 +522,15 @@ async function deleteAccount(userId) {
                     },
                 })]
                 : []),
+            ...(profile.brandProfile
+                ? [prisma.brandProfile.update({
+                    where: { userId: profile.id },
+                    data: {
+                        ...(profile.brandProfile.tagId ? { tagId: tombstone(profile.brandProfile.tagId) } : {}),
+                        ...(profile.brandProfile.email ? { email: tombstone(profile.brandProfile.email) } : {}),
+                    },
+                })]
+                : []),
             prisma.refreshToken.updateMany({ where: { userId: profile.id, revokedAt: null }, data: { revokedAt: new Date() } }),
             prisma.fcmDevice.deleteMany({ where: { userId: profile.id } }),
             prisma.post.updateMany({ where: { userId: profile.id }, data: { isActive: false } }),
@@ -544,15 +558,16 @@ async function getProfiles(userId) {
         where: query,
         include: {
             creatorProfile: { select: { name: true, profilePicture: true } },
-            freelancerProfile: { select: { name: true, profilePicture: true } }
+            freelancerProfile: { select: { name: true, profilePicture: true } },
+            brandProfile: { select: { name: true, profilePicture: true } },
         }
     });
 
     return users.map(u => ({
         id: u.id,
         role: u.role,
-        name: u.role === 'CREATOR' ? u.creatorProfile?.name : u.freelancerProfile?.name,
-        profilePicture: u.role === 'CREATOR' ? u.creatorProfile?.profilePicture : u.freelancerProfile?.profilePicture,
+        name: roleProfile(u)?.name,
+        profilePicture: roleProfile(u)?.profilePicture,
         isProfileCompleted: u.isProfileCompleted,
     }));
 }
@@ -566,7 +581,7 @@ async function selectProfile(userId, targetProfileId) {
 
     const targetUser = await prisma.user.findUnique({
         where: { id: targetProfileId },
-        include: { creatorProfile: true, freelancerProfile: true }
+        include: { creatorProfile: true, freelancerProfile: true, brandProfile: true }
     });
     if (!targetUser) throw ApiError.notFound('Profile not found');
 
@@ -593,8 +608,8 @@ async function selectProfile(userId, targetProfileId) {
 
 function sanitizeUser(user) {
     if (!user) return null;
-    const { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, isPremium, status, createdAt, creatorProfile, freelancerProfile } = user;
-    return { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, isPremium, status, createdAt, creatorProfile, freelancerProfile };
+    const { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, isPremium, status, createdAt, creatorProfile, freelancerProfile, brandProfile } = user;
+    return { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, isPremium, status, createdAt, creatorProfile, freelancerProfile, brandProfile };
 }
 
 module.exports = { initiateOtp, completeOtp, verifyFirebaseToken, refreshTokens, logout, getMe, switchRole, deleteAccount, getProfiles, selectProfile };

@@ -8,6 +8,7 @@ const push = require('../../services/push/push.service');
 const { isBlockedBetween } = require('../blocks/block.service');
 const logger = require('../../utils/logger');
 const categoryService = require('../categories/category.service');
+const { assertApprovedBrand } = require('../brands/brandApproval');
 
 // Lazy require to avoid a circular dependency — feed.service.js requires post.service.js
 // for buildPostInclude/shapePost, so loading invalidateAllFeeds at the top here would grab
@@ -67,9 +68,31 @@ function buildPostInclude() {
             facebookHandle: true,
           },
         },
+        brandProfile: {
+          select: {
+            id: true,
+            name: true,
+            profilePicture: true,
+            city: true,
+            state: true,
+            industry: true,
+            website: true,
+            instagramHandle: true,
+          },
+        },
       },
     },
   };
+}
+
+// Brand requirement posts are always shown to Creators; Freelancers only see
+// them when the brand ticked "freelancer required". Non-brand posts don't use
+// targetRoles at all (OPPOSITE_FEED_ROLE decides their audience).
+function normalizeTargetRoles(role, targetRoles) {
+  if (role !== ROLES.BRAND) return [];
+  const set = new Set([ROLES.CREATOR]);
+  if (Array.isArray(targetRoles) && targetRoles.includes(ROLES.FREELANCER)) set.add(ROLES.FREELANCER);
+  return [...set];
 }
 
 // Profiles store `categories` as raw Category-table UUIDs (multi-select), not slugs/names.
@@ -89,6 +112,17 @@ async function resolveCategoryMap(posts) {
 function shapeOwner(user, postRole, categoryMap = new Map()) {
   if (!user) return null;
   const role = postRole || user.role;
+  if (role === ROLES.BRAND) {
+    const bp = user.brandProfile;
+    return {
+      id: user.id, role, name: bp?.name || null, profilePicture: bp?.profilePicture || null,
+      location: [bp?.city, bp?.state].filter(Boolean).join(', ') || null,
+      industry: bp?.industry || null, website: bp?.website || null,
+      languages: null, experience: null, category: null, categories: [], categorySlugs: [], categoryNames: [],
+      skills: [], instagramHandle: bp?.instagramHandle || null, twitterHandle: null, facebookHandle: null,
+      isPremium: Boolean(user.isPremium),
+    };
+  }
   const profile = role === ROLES.CREATOR ? user.creatorProfile : user.freelancerProfile;
   if (!profile) {
     return {
@@ -153,6 +187,7 @@ function boostHoursToExpiresAt(boostHours) {
 }
 
 async function createPost(user, data) {
+  if (user.role === ROLES.BRAND) await assertApprovedBrand(user.id);
   const post = await prisma.post.create({
     data: {
       userId: user.id,
@@ -167,6 +202,8 @@ async function createPost(user, data) {
       imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : [],
       imageKeys: Array.isArray(data.imageKeys) ? data.imageKeys : [],
       expiresAt: boostHoursToExpiresAt(data.boostHours),
+      title: user.role === ROLES.BRAND ? data.title || null : null,
+      targetRoles: normalizeTargetRoles(user.role, data.freelancerRequired ? [ROLES.FREELANCER] : data.targetRoles),
     },
     include: buildPostInclude(),
   });
@@ -264,6 +301,30 @@ async function createPost(user, data) {
             );
           }
         }
+      } else if (user.role === ROLES.BRAND) {
+        // Brand requirement: reaches every Creator, plus every Freelancer only
+        // when the brand asked for freelancers too (post.targetRoles).
+        const audience = await prisma.user.findMany({
+          where: {
+            role: { in: post.targetRoles },
+            status: 'ACTIVE',
+            notifyCategoryPosts: true,
+            pushNotificationsEnabled: true,
+          },
+          select: { id: true },
+        });
+        const audienceIds = audience.map((u) => u.id).filter((id) => !otherIds.has(id));
+        if (audienceIds.length) {
+          const blockedIds = await getBlockedIds();
+          const notBlocked = audienceIds.filter((id) => !blockedIds.has(id));
+          await push.sendBroadcast(notBlocked, (t) =>
+            push.notificationMessage(
+              t,
+              { type: 'NEW_BRAND_POST', postId: post.id },
+              { title: `New requirement from ${posterName}`, body: post.title || preview },
+            ),
+          );
+        }
       } else if (user.role === ROLES.FREELANCER) {
         const creators = await prisma.user.findMany({
           where: {
@@ -306,8 +367,16 @@ async function updatePost(user, id, data) {
     await s3UploadService.deleteObject(existing.imageKey);
   }
 
-  const { boostHours, ...rest } = data;
+  const { boostHours, targetRoles, title, freelancerRequired, ...rest } = data;
   const updateData = boostHours !== undefined ? { ...rest, expiresAt: boostHoursToExpiresAt(boostHours) } : rest;
+  if (existing.role === ROLES.BRAND) {
+    if (freelancerRequired !== undefined) {
+      updateData.targetRoles = normalizeTargetRoles(existing.role, freelancerRequired ? [ROLES.FREELANCER] : []);
+    } else if (targetRoles !== undefined) {
+      updateData.targetRoles = normalizeTargetRoles(existing.role, targetRoles);
+    }
+    if (title !== undefined) updateData.title = title || null;
+  }
 
   const post = await prisma.post.update({
     where: { id },

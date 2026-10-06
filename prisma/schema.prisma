@@ -101,6 +101,44 @@ enum FreelancerAvailability {
   NOT_AVAILABLE
 }
 
+// Brand -> media channel advertising (see MediaChannel / AdRequest below)
+enum ChannelType {
+  TV
+  YOUTUBE
+  RADIO
+  OTT
+  PRINT
+  DIGITAL
+  OTHER
+}
+
+enum AdRequestStatus {
+  PENDING
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum AdRequestActor {
+  BRAND
+  CHANNEL
+  SYSTEM
+}
+
+enum ChannelUserRole {
+  OWNER
+  MANAGER
+}
+
+enum BrandApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // -------------------------
 // Category master (reusable across roles)
 // -------------------------
@@ -131,52 +169,54 @@ model Account {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  users        User[]
+  users User[]
 }
 
 // -------------------------
 // Base auth/user table
 // -------------------------
 model User {
-  id                 String     @id @default(uuid())
-  mobileNumber       String
-  countryCode        String     @default("+91")
-  accountId          String?
-  role               UserRole
-  categoryId         String?
-  isVerified         Boolean    @default(false)
-  isProfileCompleted Boolean    @default(false)
+  id                          String     @id @default(uuid())
+  mobileNumber                String
+  countryCode                 String     @default("+91")
+  accountId                   String?
+  role                        UserRole
+  categoryId                  String?
+  isVerified                  Boolean    @default(false)
+  isProfileCompleted          Boolean    @default(false)
   // Cached from the linked Subscription's status so the rest of the app can check
   // premium access with a plain field read instead of a join. Kept in sync by the
   // Razorpay webhook handler whenever the subscription's billing state changes.
-  isPremium          Boolean    @default(false)
-  status             UserStatus @default(ACTIVE)
-  lastLoginAt        DateTime?
+  isPremium                   Boolean    @default(false)
+  status                      UserStatus @default(ACTIVE)
+  lastLoginAt                 DateTime?
   // Refreshed (throttled) on every authenticated request — drives real "Online" presence,
   // unlike lastLoginAt which only updates once per login and goes stale while the user is
   // actively using the app within the same session.
-  lastActiveAt       DateTime?
-  fcmToken           String?
+  lastActiveAt                DateTime?
+  fcmToken                    String?
   // Privacy Settings screen — all default to the app's existing behavior
   // (visible/on) so nothing changes for users until they actively opt out.
-  isDiscoverable               Boolean  @default(true) // hide from Search when off
-  showOnlineStatus             Boolean  @default(true) // hide lastActiveAt from chat partners when off
-  shareDataForPersonalization  Boolean  @default(true) // stored preference; not yet read by any analytics/personalization system
-  pushNotificationsEnabled     Boolean  @default(true) // gates non-call pushes; incoming calls always ring
+  isDiscoverable              Boolean    @default(true) // hide from Search when off
+  showOnlineStatus            Boolean    @default(true) // hide lastActiveAt from chat partners when off
+  shareDataForPersonalization Boolean    @default(true) // stored preference; not yet read by any analytics/personalization system
+  pushNotificationsEnabled    Boolean    @default(true) // gates non-call pushes; incoming calls always ring
   // "Someone in my categories posted a requirement" — Freelancers get this for
   // Creator posts, Creators get it for Freelancer posts (see post.service.js
   // createPost). Separate from pushNotificationsEnabled since this is much
   // higher-volume than collab-based notifications and needs its own off switch.
-  notifyCategoryPosts          Boolean  @default(true)
-  preferredLanguage            String   @default("English") // stored preference; UI copy itself is English-only today
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  notifyCategoryPosts         Boolean    @default(true)
+  preferredLanguage           String     @default("English") // stored preference; UI copy itself is English-only today
+  createdAt                   DateTime   @default(now())
+  updatedAt                   DateTime   @updatedAt
 
   account           Account?           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   category          Category?          @relation(fields: [categoryId], references: [id])
   creatorProfile    CreatorProfile?
   freelancerProfile FreelancerProfile?
+  brandProfile      BrandProfile?
   posts             Post[]
+  adRequests        AdRequest[]
   refreshTokens     RefreshToken[]
   otps              Otp[]
 
@@ -261,48 +301,90 @@ model CreatorProfile {
 // Freelancer profile — video editors, designers, photographers, writers
 // -------------------------
 model FreelancerProfile {
-  id                String                 @id @default(uuid())
-  userId            String                 @unique
-  profilePicture    String?
-  profilePictureKey String?
-  name              String?
-  email             String?                @unique
-  categoryId        String?
-  categories        String[]               @default([])
-  languages         String[]               @default([])
-  language          String?
-  bio               String?
-  location          String?
+  id                 String                 @id @default(uuid())
+  userId             String                 @unique
+  profilePicture     String?
+  profilePictureKey  String?
+  name               String?
+  email              String?                @unique
+  categoryId         String?
+  categories         String[]               @default([])
+  languages          String[]               @default([])
+  language           String?
+  bio                String?
+  location           String?
   // Freelancer-specific
-  skills            String[]               @default([])
-  hourlyRate        Decimal?               @db.Decimal(10, 2)
-  experienceLevel   ExperienceLevel?
-  portfolioUrl      String?
-  availability      FreelancerAvailability @default(AVAILABLE)
-  servicesOffered   String?
+  skills             String[]               @default([])
+  hourlyRate         Decimal?               @db.Decimal(10, 2)
+  experienceLevel    ExperienceLevel?
+  portfolioUrl       String?
+  availability       FreelancerAvailability @default(AVAILABLE)
+  servicesOffered    String?
   // Social Media Manager-only: independent checkboxes, not a single choice —
   // a freelancer can offer both. Empty for every other category.
-  workTypes         String[]               @default([])
+  workTypes          String[]               @default([])
   // Social media presence
-  instagramHandle      String?
-  instagramFollowers   Int?
-  youtubeHandle        String?
-  youtubeFollowers     Int?
-  twitterHandle        String?
-  twitterFollowers     Int?
-  snapchatHandle       String?
-  snapchatFollowers    Int?
-  facebookHandle       String?
-  facebookFollowers    Int?
-  tagId             String?                @unique
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
+  instagramHandle    String?
+  instagramFollowers Int?
+  youtubeHandle      String?
+  youtubeFollowers   Int?
+  twitterHandle      String?
+  twitterFollowers   Int?
+  snapchatHandle     String?
+  snapchatFollowers  Int?
+  facebookHandle     String?
+  facebookFollowers  Int?
+  tagId              String?                @unique
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   category Category? @relation(fields: [categoryId], references: [id])
 
   @@index([categoryId])
   @@index([availability])
+}
+
+// -------------------------
+// Brand profile — companies that advertise on media channels and post
+// requirements for creators/freelancers. `name` + `profilePicture` mirror the
+// other profile tables so generic "creatorProfile || freelancerProfile ||
+// brandProfile" display code works unchanged (name = brand name, picture = logo).
+//
+// Brands sign up with KYC details (PAN required, GSTIN optional) and stay
+// PENDING until an admin approves them from /admin/brands — only APPROVED
+// brands can post requirements, collaborate or send ad requests.
+// -------------------------
+model BrandProfile {
+  id                 String              @id @default(uuid())
+  userId             String              @unique
+  name               String?
+  profilePicture     String?
+  profilePictureKey  String?
+  email              String?             @unique
+  pan                String?
+  gstin              String?
+  city               String?
+  state              String?
+  website            String?
+  industry           String?
+  bio                String?
+  contactPerson      String?
+  contactDesignation String?
+  companySize        String?
+  instagramHandle    String?
+  youtubeHandle      String?
+  tagId              String?             @unique
+  approvalStatus     BrandApprovalStatus @default(PENDING)
+  rejectionReason    String?
+  reviewedAt         DateTime?
+  reviewedBy         String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([approvalStatus, createdAt])
 }
 
 // -------------------------
@@ -346,6 +428,12 @@ model Post {
   // toward the month it was used, not silently reset by reading boostedUntil.
   boostedUntil      DateTime?
   boostedAt         DateTime?
+  // Brand requirement posts only (role = BRAND). Who the requirement is shown
+  // to: always includes CREATOR; FREELANCER only when the brand ticked
+  // "freelancer required". Empty for Creator/Freelancer posts, which keep
+  // using OPPOSITE_FEED_ROLE for visibility.
+  title             String?
+  targetRoles       UserRole[]        @default([])
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -525,19 +613,19 @@ model Message {
 // is intentionally NOT persisted here — it's transient by nature.
 // -------------------------
 model Notification {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   userId      String
   type        String
   title       String
   body        String
   data        Json?
-  isRead      Boolean  @default(false)
+  isRead      Boolean   @default(false)
   readAt      DateTime?
   // Only set for rows created by an admin Broadcast — lets read-rate be
   // computed live (count isRead=true vs total per broadcastId) instead of
   // maintaining a counter that could drift out of sync.
   broadcastId String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   broadcast Broadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
@@ -604,17 +692,17 @@ model ProfileView {
 // Instagram DM Verification
 // -------------------------
 model InstagramVerification {
-  id                  String                     @id @default(uuid())
-  userId              String
-  instagramUrl        String
-  instagramUsername   String
-  verificationCode    String
-  status              InstagramVerificationStatus @default(PENDING)
-  followers           Int?
-  expiresAt           DateTime
-  verifiedAt          DateTime?
-  createdAt           DateTime                   @default(now())
-  updatedAt           DateTime                   @updatedAt
+  id                String                      @id @default(uuid())
+  userId            String
+  instagramUrl      String
+  instagramUsername String
+  verificationCode  String
+  status            InstagramVerificationStatus @default(PENDING)
+  followers         Int?
+  expiresAt         DateTime
+  verifiedAt        DateTime?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -624,17 +712,17 @@ model InstagramVerification {
 }
 
 model SocialVerification {
-  id              String                    @id @default(uuid())
+  id              String                   @id @default(uuid())
   userId          String
   platform        SocialPlatform
-  status          SocialVerificationStatus  @default(PENDING)
+  status          SocialVerificationStatus @default(PENDING)
   socialAccountId String?
   accountName     String?
   failureReason   String?
   expiresAt       DateTime
   verifiedAt      DateTime?
-  createdAt       DateTime                  @default(now())
-  updatedAt       DateTime                  @updatedAt
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -649,17 +737,17 @@ model SocialVerification {
 // endpoint checks for a VERIFIED row matching (userId, email) at save time.
 // -------------------------
 model EmailVerification {
-  id             String                   @id @default(uuid())
-  userId         String
-  email          String
-  codeHash       String
-  status         EmailVerificationStatus  @default(PENDING)
-  attempts       Int                      @default(0)
-  failureReason  String?
-  expiresAt      DateTime
-  verifiedAt     DateTime?
-  createdAt      DateTime                 @default(now())
-  updatedAt      DateTime                 @updatedAt
+  id            String                  @id @default(uuid())
+  userId        String
+  email         String
+  codeHash      String
+  status        EmailVerificationStatus @default(PENDING)
+  attempts      Int                     @default(0)
+  failureReason String?
+  expiresAt     DateTime
+  verifiedAt    DateTime?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -698,17 +786,17 @@ enum AdminRole {
 }
 
 model AdminUser {
-  id                 String    @id @default(uuid())
-  name               String
-  email              String    @unique
-  passwordHash       String
-  role               AdminRole @default(SUPER_ADMIN)
-  isActive           Boolean   @default(true)
-  twoFactorSecret    String?
-  twoFactorEnabled   Boolean   @default(false)
-  lastLoginAt        DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id               String    @id @default(uuid())
+  name             String
+  email            String    @unique
+  passwordHash     String
+  role             AdminRole @default(SUPER_ADMIN)
+  isActive         Boolean   @default(true)
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean   @default(false)
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   activityLogs AdminActivityLog[]
   broadcasts   Broadcast[]        @relation("BroadcastCreatedBy")
@@ -845,21 +933,21 @@ enum ReportStatus {
 }
 
 model Report {
-  id         String       @id @default(uuid())
-  type       ReportType
-  targetId   String
-  targetName String
-  reason     String
-  reportedBy String
-  status     ReportStatus @default(PENDING)
-  reviewedAt DateTime?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  id            String       @id @default(uuid())
+  type          ReportType
+  targetId      String
+  targetName    String
+  reason        String
+  reportedBy    String
+  status        ReportStatus @default(PENDING)
+  reviewedAt    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   // True for the row block.service.js auto-creates whenever someone blocks a
   // user (admin moderation trail only) — NOT an explicit user report. Kept
   // false for real reports so "did I report this?" and the duplicate-report
   // guard only ever look at reports the user actually chose to submit.
-  autoGenerated Boolean @default(false)
+  autoGenerated Boolean      @default(false)
 
   reporter User @relation("ReportReporter", fields: [reportedBy], references: [id], onDelete: Cascade)
 
@@ -888,29 +976,213 @@ enum SubscriptionProvider {
 }
 
 model Subscription {
-  id     String               @id @default(uuid())
-  userId String               @unique
+  id                         String               @id @default(uuid())
+  userId                     String               @unique
   // Android/web go through Razorpay; iOS must use StoreKit per Apple 3.1.1 —
   // provider says which billing system owns this row. Razorpay fields stay
   // required-shaped in practice but are nullable so an Apple row doesn't need
   // fake Razorpay ids, and vice versa.
-  provider               SubscriptionProvider @default(RAZORPAY)
-  razorpaySubscriptionId String?              @unique
-  razorpayPlanId         String?
+  provider                   SubscriptionProvider @default(RAZORPAY)
+  razorpaySubscriptionId     String?              @unique
+  razorpayPlanId             String?
   // Apple's own subscription identity: originalTransactionId stays the same
   // across renewals of the same subscription (that's what Server
   // Notifications key off), transactionId is the latest individual purchase/
   // renewal event.
-  appleOriginalTransactionId String? @unique
+  appleOriginalTransactionId String?              @unique
   appleTransactionId         String?
   appleProductId             String?
-  status                 SubscriptionStatus @default(CREATED)
-  currentStart           DateTime?
-  currentEnd             DateTime?
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
+  status                     SubscriptionStatus   @default(CREATED)
+  currentStart               DateTime?
+  currentEnd                 DateTime?
+  createdAt                  DateTime             @default(now())
+  updatedAt                  DateTime             @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status])
+}
+
+// =====================================================
+// Brand advertising on media channels
+// =====================================================
+// A brand picks a MediaChannel (TV / YouTube / ...), picks an AdType, browses
+// that channel's catalog (rate card), and sends an AdRequest with one or more
+// catalog items. The channel's team works the request from the channel CRM,
+// which authenticates as a ChannelUser (email + password, separate from app
+// OTP users — same split as AdminUser).
+
+// Powers the "Top YouTube Channels" section on the Brand Home tab (admin page
+// /admin/youtube-channels). `type` lets TV channels live in the same table.
+model MediaChannel {
+  id              String      @id @default(uuid())
+  name            String
+  slug            String      @unique
+  type            ChannelType @default(YOUTUBE)
+  logoUrl         String?
+  logoKey         String?
+  subscriberCount Int         @default(0)
+  category        String?
+  description     String?
+  languages       String[]    @default([])
+  region          String?
+  websiteUrl      String?
+  contactEmail    String?
+  contactPhone    String?
+  isActive        Boolean     @default(true)
+  isVerified      Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  catalogItems ChannelCatalogItem[]
+  adRequests   AdRequest[]
+  users        ChannelUser[]
+
+  @@index([type, isActive, subscriberCount])
+}
+
+// Powers the "Ad Types" section on the Brand Home tab (Strip Ad, Banner Ad,
+// Corner Ads...), managed from /admin/ad-types. App-wide — each channel's
+// catalog prices whichever of these it offers.
+model AdType {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  iconUrl     String?
+  accentColor String?
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  catalogItems ChannelCatalogItem[]
+}
+
+// Powers the "Celebrities" section on the Brand Home tab (/admin/celebrities).
+model Celebrity {
+  id            String   @id @default(uuid())
+  name          String
+  photoUrl      String?
+  role          String?
+  followerCount Int      @default(0)
+  isVerified    Boolean  @default(false)
+  profileUrl    String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isActive, followerCount])
+}
+
+// One rate-card line on a channel's catalog.
+model ChannelCatalogItem {
+  id              String   @id @default(uuid())
+  channelId       String
+  adTypeId        String
+  name            String
+  description     String?
+  // What one unit of `price` buys, e.g. "per 10 sec spot", "per video".
+  unit            String
+  price           Decimal  @db.Decimal(12, 2)
+  currency        String   @default("INR")
+  minQuantity     Int      @default(1)
+  // Optional slot/placement detail, e.g. "Prime time 8-10 PM".
+  slot            String?
+  durationSeconds Int?
+  mediaUrl        String?
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  channel      MediaChannel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  adType       AdType          @relation(fields: [adTypeId], references: [id])
+  requestItems AdRequestItem[]
+
+  @@index([channelId, adTypeId, isActive])
+}
+
+model AdRequest {
+  id           String          @id @default(uuid())
+  brandUserId  String
+  channelId    String
+  status       AdRequestStatus @default(PENDING)
+  campaignName String?
+  brief        String?
+  startDate    DateTime?
+  endDate      DateTime?
+  budget       Decimal?        @db.Decimal(14, 2)
+  // Sum of item lineTotals at send time — items snapshot their price, so a
+  // later rate-card change never rewrites what the brand was quoted.
+  totalAmount  Decimal         @db.Decimal(14, 2)
+  currency     String          @default("INR")
+  // Latest message from the channel to the brand (also kept in events).
+  channelNote  String?
+  respondedAt  DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  brand   User             @relation(fields: [brandUserId], references: [id], onDelete: Cascade)
+  channel MediaChannel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  items   AdRequestItem[]
+  events  AdRequestEvent[]
+
+  @@index([brandUserId, createdAt])
+  @@index([channelId, status, createdAt])
+}
+
+model AdRequestItem {
+  id            String   @id @default(uuid())
+  requestId     String
+  catalogItemId String?
+  // Snapshots of the catalog line at request time.
+  adTypeName    String
+  itemName      String
+  unit          String
+  unitPrice     Decimal  @db.Decimal(12, 2)
+  quantity      Int
+  lineTotal     Decimal  @db.Decimal(14, 2)
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  request     AdRequest           @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  catalogItem ChannelCatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
+}
+
+// Timeline for the CRM: every status change and note, by either side.
+model AdRequestEvent {
+  id         String           @id @default(uuid())
+  requestId  String
+  actor      AdRequestActor
+  actorId    String?
+  actorName  String?
+  fromStatus AdRequestStatus?
+  toStatus   AdRequestStatus?
+  note       String?
+  createdAt  DateTime         @default(now())
+
+  request AdRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+}
+
+// Channel CRM login.
+model ChannelUser {
+  id           String          @id @default(uuid())
+  channelId    String
+  name         String
+  email        String          @unique
+  passwordHash String
+  role         ChannelUserRole @default(MANAGER)
+  isActive     Boolean         @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  channel MediaChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId])
 }

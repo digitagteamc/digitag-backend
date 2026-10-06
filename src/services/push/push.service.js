@@ -181,12 +181,13 @@ async function sendPersonalizedBroadcast(userIds, { title, body, data, broadcast
         fcmToken: true,
         creatorProfile: { select: { name: true } },
         freelancerProfile: { select: { name: true } },
+        brandProfile: { select: { name: true } },
       },
     }),
     prisma.fcmDevice.findMany({ where: { userId: { in: userIds } }, select: { userId: true, token: true } }),
   ]);
 
-  const nameById = new Map(users.map((u) => [u.id, u.creatorProfile?.name || u.freelancerProfile?.name || 'there']));
+  const nameById = new Map(users.map((u) => [u.id, u.creatorProfile?.name || u.freelancerProfile?.name || u.brandProfile?.name || 'there']));
   const tokensByUser = new Map();
   for (const u of users) {
     if (u.fcmToken) tokensByUser.set(u.id, new Set([u.fcmToken]));

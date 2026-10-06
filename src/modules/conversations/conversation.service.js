@@ -3,6 +3,7 @@ const { ApiError } = require('../../utils/apiResponse');
 const cache = require('../../services/cache/cache.service');
 const push = require('../../services/push/push.service');
 const { assertNotBlocked, isBlockedBetween } = require('../blocks/block.service');
+const { roleProfile, displayName } = require('../../utils/userHelpers');
 
 const CONVERSATIONS_TTL = 30; // seconds
 
@@ -37,6 +38,7 @@ const userInclude = {
     isPremium: true,
     creatorProfile: { select: { name: true, profilePicture: true, location: true } },
     freelancerProfile: { select: { name: true, profilePicture: true, location: true } },
+    brandProfile: { select: { name: true, profilePicture: true, city: true } },
   },
 };
 
@@ -62,7 +64,7 @@ function shapeParticipant(user, isBlockedPair = false) {
       isDeleted: true,
     };
   }
-  const profile = user.creatorProfile || user.freelancerProfile;
+  const profile = roleProfile(user);
   // Privacy Settings > Show Online Status: when off, hide the timestamps the
   // chat UI uses to render "online"/"last seen" for this person. Same for a
   // blocked pair (either direction) regardless of that setting — blocking
@@ -73,7 +75,7 @@ function shapeParticipant(user, isBlockedPair = false) {
     role: user.role,
     name: profile ? profile.name : null,
     profilePicture: profile ? profile.profilePicture : null,
-    location: profile ? profile.location : null,
+    location: profile ? (profile.location ?? profile.city ?? null) : null,
     lastLoginAt: hideActivity ? null : (user.lastLoginAt || null),
     lastActiveAt: hideActivity ? null : (user.lastActiveAt || null),
     isPremium: Boolean(user.isPremium),
@@ -296,9 +298,9 @@ async function sendMessage(userId, conversationId, content, imageUrl = null, rep
   const otherUserId = conv.participantAId === userId ? conv.participantBId : conv.participantAId;
   const senderUser = await prisma.user.findUnique({
     where: { id: userId },
-    select: { creatorProfile: { select: { name: true } }, freelancerProfile: { select: { name: true } } },
+    select: { role: true, creatorProfile: { select: { name: true } }, freelancerProfile: { select: { name: true } }, brandProfile: { select: { name: true } } },
   });
-  const senderName = senderUser?.creatorProfile?.name || senderUser?.freelancerProfile?.name || 'Someone';
+  const senderName = displayName(senderUser);
   await push.sendToUser(otherUserId, (t) =>
     push.notificationMessage(
       t,
@@ -383,9 +385,9 @@ async function toggleReaction(userId, conversationId, messageId, emoji) {
   if (isAdding) {
     const reactorUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { creatorProfile: { select: { name: true } }, freelancerProfile: { select: { name: true } } },
+      select: { role: true, creatorProfile: { select: { name: true } }, freelancerProfile: { select: { name: true } }, brandProfile: { select: { name: true } } },
     });
-    const reactorName = reactorUser?.creatorProfile?.name || reactorUser?.freelancerProfile?.name || 'Someone';
+    const reactorName = displayName(reactorUser);
     await push.sendToUser(otherUserId, (t) =>
       push.notificationMessage(
         t,

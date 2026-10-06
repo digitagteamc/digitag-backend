@@ -6,6 +6,7 @@ const env = require('../../config/env');
 const push = require('../../services/push/push.service');
 const voip = require('../../services/push/voip.service');
 const { assertNotBlocked } = require('../blocks/block.service');
+const { displayName } = require('../../utils/userHelpers');
 
 const TOKEN_EXPIRY_SECONDS = 3600;
 
@@ -53,6 +54,7 @@ async function initiateCall(callerId, calleeId) {
         id: true,
         creatorProfile: { select: { name: true, profilePicture: true } },
         freelancerProfile: { select: { name: true, profilePicture: true } },
+        brandProfile: { select: { name: true, profilePicture: true } },
       },
     }),
     prisma.user.findUnique({
@@ -76,10 +78,7 @@ async function initiateCall(callerId, calleeId) {
     data: { callerId, calleeId, channelName },
   });
 
-  const callerName =
-    caller?.creatorProfile?.name ||
-    caller?.freelancerProfile?.name ||
-    'DigiTag User';
+  const callerName = displayName(caller, 'DigiTag User');
 
   // Data-only at the top level (no `notification` field): on Android, a
   // notification payload alongside data suppresses the JS background handler,

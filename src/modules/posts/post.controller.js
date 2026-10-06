@@ -4,6 +4,8 @@ const MESSAGES = require('../../constants/messages');
 const STATUS = require('../../constants/statusCodes');
 const service = require('./post.service');
 const uploadService = require('../uploads/upload.service');
+const { ROLES } = require('../../constants/roles');
+const { assertApprovedBrand } = require('../brands/brandApproval');
 
 async function attachUploadedImage(req) {
   if (!req.file) return;
@@ -30,6 +32,8 @@ async function attachUploadedImages(req) {
 }
 
 const create = asyncHandler(async (req, res) => {
+  // Check before uploading so an unapproved brand doesn't leave orphaned images in S3.
+  if (req.user.role === ROLES.BRAND) await assertApprovedBrand(req.user.id);
   await attachUploadedImages(req);
   const data = await service.createPost(req.user, req.body);
   return success(res, { statusCode: STATUS.CREATED, message: MESSAGES.POST.CREATED, data });
