@@ -95,6 +95,19 @@ function normalizeTargetRoles(role, targetRoles) {
   return [...set];
 }
 
+// Extra brand-requirement details, only set via /brand-requirements (the
+// /posts validation doesn't accept them).
+function requirementFields(data) {
+  return {
+    requirementTarget: data.requirementTarget || null,
+    creatorCountMin: data.creatorCountMin ?? null,
+    creatorCountMax: data.creatorCountMax ?? null,
+    genderPreference: data.genderPreference || null,
+    deliverables: data.deliverables || null,
+    visibility: data.visibility || null,
+  };
+}
+
 // Profiles store `categories` as raw Category-table UUIDs (multi-select), not slugs/names.
 // Explore/Home filter tabs compare against human-readable slugs/names, so posts need those
 // UUIDs resolved before the frontend can match anything. Batched across a whole list of
@@ -204,6 +217,7 @@ async function createPost(user, data) {
       expiresAt: boostHoursToExpiresAt(data.boostHours),
       title: user.role === ROLES.BRAND ? data.title || null : null,
       targetRoles: normalizeTargetRoles(user.role, data.freelancerRequired ? [ROLES.FREELANCER] : data.targetRoles),
+      ...(user.role === ROLES.BRAND ? requirementFields(data) : {}),
     },
     include: buildPostInclude(),
   });

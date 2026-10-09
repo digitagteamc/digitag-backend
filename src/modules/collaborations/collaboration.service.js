@@ -27,6 +27,7 @@ const postInclude = {
     collaborationType: true,
     imageUrl: true,
     location: true,
+    role: true,
     createdAt: true,
   },
 };
@@ -54,6 +55,7 @@ function shapeCollab(collab) {
     senderId: collab.senderId,
     receiverId: collab.receiverId,
     postId: collab.postId,
+    requirementId: collab.post?.role === 'BRAND' ? collab.postId : null,
     message: collab.message,
     status: collab.status,
     respondedAt: collab.respondedAt,
@@ -76,7 +78,8 @@ async function getCollabRequestQuota(userId) {
   return { used, limit: FREE_COLLAB_REQUESTS_PER_MONTH, remaining: Math.max(FREE_COLLAB_REQUESTS_PER_MONTH - used, 0) };
 }
 
-async function createCollaboration(senderId, { receiverId, postId = null, message = null }, senderRole) {
+async function createCollaboration(senderId, { receiverId, postId = null, requirementId = null, message = null }, senderRole) {
+  postId = postId || requirementId;
   if (senderId === receiverId) {
     throw ApiError.badRequest('You cannot send a collaboration request to yourself');
   }
@@ -158,13 +161,15 @@ async function createCollaboration(senderId, { receiverId, postId = null, messag
   return shapeCollab(collab);
 }
 
-async function listCollaborations(userId, { direction = 'incoming', status } = {}) {
+async function listCollaborations(userId, { direction = 'incoming', status, requirementId } = {}) {
   const where = {};
   if (direction === 'incoming') where.receiverId = userId;
   else if (direction === 'outgoing') where.senderId = userId;
   else where.OR = [{ receiverId: userId }, { senderId: userId }];
 
   if (status) where.status = status;
+  // "View Responses" on one brand requirement (a requirement is a brand post).
+  if (requirementId) where.postId = requirementId;
 
   const items = await prisma.collaboration.findMany({
     where,

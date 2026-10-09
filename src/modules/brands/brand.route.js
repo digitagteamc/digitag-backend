@@ -29,6 +29,7 @@ router.put(
 
 // Pending-approval screen polls this after Brand Registration.
 router.get('/status', authenticate, authorize(ROLES.BRAND), controller.status);
+router.get('/me/status', authenticate, authorize(ROLES.BRAND), controller.status);
 router.get('/dashboard', authenticate, authorize(ROLES.BRAND), controller.dashboard);
 
 // Brand Home tab: Top YouTube Channels, Ad Types, Celebrities (admin-managed).
@@ -67,5 +68,8 @@ router.get(
   validateRequest({ query: schemas.requirementsQuery }),
   controller.requirements,
 );
+
+// Public brand card. Keep last so it doesn't shadow the fixed paths above.
+router.get('/:id', authenticate, validateRequest({ params: idParam }), controller.publicProfile);
 
 module.exports = router;

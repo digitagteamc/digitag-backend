@@ -25,6 +25,8 @@ const notificationRoutes = require('../modules/notifications/notification.route'
 const waitlistRoutes = require('../modules/waitlist/waitlist.route');
 const eventRegistrationRoutes = require('../modules/eventRegistrations/eventRegistration.route');
 const brandRoutes = require('../modules/brands/brand.route');
+const brandCatalogRoutes = require('../modules/brands/brandCatalog.route');
+const brandRequirementRoutes = require('../modules/brandRequirements/brandRequirement.route');
 const channelRoutes = require('../modules/channels/channel.route');
 const adRequestRoutes = require('../modules/ad-requests/adRequest.route');
 const crmRoutes = require('../modules/crm/crm.route');
@@ -78,8 +80,10 @@ router.use('/notifications', notificationRoutes);
 router.use('/waitlist', waitlistRoutes);
 router.use('/event-registrations', eventRegistrationRoutes);
 router.use('/brands', brandRoutes);
+router.use('/brand-requirements', brandRequirementRoutes);
 router.use('/channels', channelRoutes);
 router.use('/ad-requests', adRequestRoutes);
 router.use('/crm', crmRoutes);
+router.use(brandCatalogRoutes);
 
 module.exports = router;

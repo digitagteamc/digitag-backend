@@ -434,6 +434,16 @@ model Post {
   // using OPPOSITE_FEED_ROLE for visibility.
   title             String?
   targetRoles       UserRole[]        @default([])
+  // Brand requirement details captured by the app's "Who are you looking
+  // for?" composer (served through /brand-requirements). requirementTarget is
+  // CREATORS or AGENCIES; viewCount counts views by creators/freelancers.
+  requirementTarget String?
+  creatorCountMin   Int?
+  creatorCountMax   Int?
+  genderPreference  String?
+  deliverables      String?
+  visibility        String?
+  viewCount         Int               @default(0)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 

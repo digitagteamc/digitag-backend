@@ -4,6 +4,8 @@ const { uuid } = require('../../validations/common.validation');
 const createSchema = Joi.object({
   receiverId: uuid.required(),
   postId: uuid.optional(),
+  // The app's brand-requirement screens send requirementId — it is the post id.
+  requirementId: uuid.optional(),
   message: Joi.string().trim().max(1000).allow('', null).optional(),
 });
 
@@ -14,6 +16,7 @@ const respondSchema = Joi.object({
 const listQuery = Joi.object({
   direction: Joi.string().valid('incoming', 'outgoing', 'all').optional(),
   status: Joi.string().valid('PENDING', 'ACCEPTED', 'DECLINED', 'CANCELLED', 'COMPLETED').optional(),
+  requirementId: uuid.optional(),
 }).unknown(true);
 
 module.exports = { createSchema, respondSchema, listQuery };

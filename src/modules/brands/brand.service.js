@@ -146,11 +146,51 @@ async function listCelebrities(query = {}) {
   return { items, meta: buildPaginationMeta({ total, page, limit }) };
 }
 
+/** "See all" for Top YouTube Channels. */
+async function listYoutubeChannels(query = {}) {
+  const where = { isActive: true, type: 'YOUTUBE' };
+  if (query.search) where.name = { contains: query.search, mode: 'insensitive' };
+  if (query.category) where.category = { equals: query.category, mode: 'insensitive' };
+  return prisma.mediaChannel.findMany({
+    where,
+    orderBy: [{ subscriberCount: 'desc' }, { name: 'asc' }],
+    select: homeChannelSelect,
+  });
+}
+
+async function listAdTypes() {
+  return prisma.adType.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: homeAdTypeSelect });
+}
+
+// Public card fields only — PAN/GSTIN and review details stay private.
+const publicBrandSelect = {
+  id: true, userId: true, name: true, profilePicture: true, city: true, state: true, website: true,
+  industry: true, bio: true, companySize: true, instagramHandle: true, youtubeHandle: true, tagId: true,
+  approvalStatus: true, createdAt: true,
+};
+
+/** A brand's public profile, by brand profile id or by the brand's user id. */
+async function getPublicProfile(id) {
+  const profile = await prisma.brandProfile.findFirst({ where: { OR: [{ id }, { userId: id }] }, select: publicBrandSelect });
+  if (!profile) throw ApiError.notFound(MESSAGES.PROFILE.NOT_FOUND);
+  return withDisplayFields(profile);
+}
+
+// The app's brand profile screen reads category / location / partnerSince.
+function withDisplayFields(profile) {
+  return {
+    ...profile,
+    category: profile.industry || null,
+    location: [profile.city, profile.state].filter(Boolean).join(', ') || null,
+    partnerSince: profile.createdAt,
+  };
+}
+
 async function getMyProfile(userId) {
   await ensureBrandUser(userId);
   const profile = await prisma.brandProfile.findUnique({ where: { userId } });
   if (!profile) throw ApiError.notFound(MESSAGES.PROFILE.NOT_FOUND);
-  return profile;
+  return withDisplayFields(profile);
 }
 
 // -------------------------
@@ -357,8 +397,11 @@ module.exports = {
   createProfile,
   updateProfile,
   getMyProfile,
+  getPublicProfile,
   getApprovalStatus,
   getHome,
+  listYoutubeChannels,
+  listAdTypes,
   listCelebrities,
   listMyPosts,
   listApplicants,

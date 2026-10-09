@@ -54,4 +54,33 @@ const celebrities = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
 });
 
-module.exports = { createProfile, updateProfile, me, status, home, celebrities, myPosts, applicants, requirements, dashboard };
+const youtubeChannels = asyncHandler(async (req, res) => {
+  const data = await service.listYoutubeChannels(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
+const adTypes = asyncHandler(async (req, res) => {
+  const data = await service.listAdTypes();
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data });
+});
+
+const publicProfile = asyncHandler(async (req, res) => {
+  const data = await service.getPublicProfile(req.params.id);
+  return success(res, { message: MESSAGES.PROFILE.FETCHED, data });
+});
+
+module.exports = {
+  createProfile,
+  updateProfile,
+  me,
+  status,
+  home,
+  celebrities,
+  youtubeChannels,
+  adTypes,
+  publicProfile,
+  myPosts,
+  applicants,
+  requirements,
+  dashboard,
+};
