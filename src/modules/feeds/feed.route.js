@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const Joi = require('joi');
-const rateLimit = require('express-rate-limit');
+const { createRateLimiter } = require('../../utils/rateLimiter');
 
 const controller = require('./feed.controller');
 const { optionalAuth } = require('../../middlewares/authMiddleware');
@@ -8,12 +8,10 @@ const { validateRequest } = require('../../middlewares/validateMiddleware');
 const { pagination, uuid } = require('../../validations/common.validation');
 
 // 30 feed fetches per minute — prevents infinite-scroll abuse
-const feedLimiter = rateLimit({
+const feedLimiter = createRateLimiter('feed', {
   windowMs: 60 * 1000,
   max: 30,
   keyGenerator: (req) => req.user?.id || req.ip,
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 const router = Router();

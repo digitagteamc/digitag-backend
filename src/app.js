@@ -3,9 +3,8 @@ const helmet = require('helmet');
 const cors = require('cors');
 const morgan = require('morgan');
 const compression = require('compression');
-const rateLimit = require('express-rate-limit');
-
 const env = require('./config/env');
+const { createRateLimiter } = require('./utils/rateLimiter');
 const routes = require('./routes');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware');
 const logger = require('./utils/logger');
@@ -39,22 +38,19 @@ if (!env.isTest) {
 
 // Global limiter — generous enough for legitimate heavy usage, tight enough to block bots
 app.use(
-  rateLimit({
+  createRateLimiter('global', {
     windowMs: 60 * 1000,   // 1-minute windows
     max: env.RATE_LIMIT.max,
-    standardHeaders: true,
-    legacyHeaders: false,
     message: { success: false, message: 'Too many requests, please try again later.' },
   }),
 );
 
-// Slow-down repeated requests (sliding penalty) — export for use in route files
-app.locals.createLimiter = (windowMs, max) =>
-  rateLimit({
+// Slow-down repeated requests (sliding penalty) — export for use in route files.
+// `name` must be unique per limiter so their counters don't mix.
+app.locals.createLimiter = (name, windowMs, max) =>
+  createRateLimiter(name, {
     windowMs,
     max,
-    standardHeaders: true,
-    legacyHeaders: false,
     message: { success: false, message: 'Too many requests, please try again later.' },
   });
 

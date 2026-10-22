@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const Joi = require('joi');
-const rateLimit = require('express-rate-limit');
+const { createRateLimiter } = require('../../utils/rateLimiter');
 
 const { prisma } = require('../../config/db');
 const { success } = require('../../utils/apiResponse');
@@ -10,12 +10,10 @@ const { optionalAuth } = require('../../middlewares/authMiddleware');
 
 // The "Notify Me" hero on Home is visible to guests too, so no auth is
 // required — but rate-limit hard since it's an open write endpoint.
-const joinLimiter = rateLimit({
+const joinLimiter = createRateLimiter('waitlist-join', {
   windowMs: 60 * 1000,
   max: 5,
   keyGenerator: (req) => req.user?.id || req.ip,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { success: false, message: 'Too many attempts, try again shortly.' },
 });
 

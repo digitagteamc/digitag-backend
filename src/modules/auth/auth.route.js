@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const rateLimit = require('express-rate-limit');
+const { createRateLimiter } = require('../../utils/rateLimiter');
 
 const env = require('../../config/env');
 const controller = require('./auth.controller');
@@ -9,11 +9,9 @@ const schemas = require('./auth.validation');
 
 const router = Router();
 
-const otpLimiter = rateLimit({
+const otpLimiter = createRateLimiter('otp', {
   windowMs: env.RATE_LIMIT.windowMs,
   max: env.RATE_LIMIT.otpMax,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { success: false, message: 'Too many OTP requests. Try again later.' },
 });
 

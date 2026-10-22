@@ -1,4 +1,5 @@
 const Redis = require('ioredis');
+const env = require('../../config/env');
 const logger = require('../../utils/logger');
 
 let client = null;
@@ -7,21 +8,21 @@ let connected = false;
 function getClient() {
   if (client) return client;
 
-  const host = process.env.REDIS_HOST || '127.0.0.1';
-  const port = parseInt(process.env.REDIS_PORT || '6379', 10);
-
   client = new Redis({
-    host,
-    port,
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+    password: env.REDIS_PASSWORD || undefined,
+    tls: env.REDIS_TLS ? {} : undefined,
     lazyConnect: true,
     maxRetriesPerRequest: 1,
     enableOfflineQueue: false,
     connectTimeout: 3000,
-    retryStrategy: (times) => {
-      // Stop retrying after 3 attempts — let the app work without cache
-      if (times > 3) return null;
-      return Math.min(times * 200, 1000);
-    },
+    // Keep reconnecting with backoff instead of giving up: a managed Redis
+    // failover drops the connection for a few seconds, and giving up would
+    // leave this process without cache or shared rate limits until restart.
+    // Commands fail fast while disconnected (no offline queue), so callers
+    // fall back to working without Redis in the meantime.
+    retryStrategy: (times) => Math.min(times * 200, 5000),
   });
 
   client.on('connect', () => {
@@ -110,4 +111,15 @@ async function wrap(key, ttlSeconds, fn) {
   return fresh;
 }
 
-module.exports = { get, set, del, delPattern, wrap };
+/**
+ * Health probe for the readiness check. True when Redis answers PING.
+ */
+async function ping() {
+  try {
+    return (await getClient().ping()) === 'PONG';
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { get, set, del, delPattern, wrap, ping, getClient };

@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const rateLimit = require('express-rate-limit');
+const { createRateLimiter } = require('../../utils/rateLimiter');
 
 const controller = require('./eventRegistration.controller');
 const schemas = require('./eventRegistration.validation');
@@ -12,12 +12,10 @@ const ticketCodeParam = Joi.object({ ticketCode: uuid.required() });
 
 // Public registration form is open to anyone (no login) — rate-limit hard
 // since it's an open write endpoint, same convention as waitlist.route.js.
-const registerLimiter = rateLimit({
+const registerLimiter = createRateLimiter('event-register', {
   windowMs: 60 * 1000,
   max: 5,
   keyGenerator: (req) => req.user?.id || req.ip,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { success: false, message: 'Too many attempts, try again shortly.' },
 });
 

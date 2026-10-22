@@ -6,23 +6,22 @@ const logger = require('../../utils/logger');
 let client = null;
 function getClient() {
   if (!client) {
-    client = new SESClient({
-      region: env.AWS.region,
-      credentials: {
+    const config = { region: env.AWS.region };
+    // Static keys are optional: without them the SDK's default credential
+    // chain is used (the EC2 instance role in production).
+    if (env.AWS.accessKeyId && env.AWS.secretAccessKey) {
+      config.credentials = {
         accessKeyId: env.AWS.accessKeyId,
         secretAccessKey: env.AWS.secretAccessKey,
-      },
-    });
+      };
+    }
+    client = new SESClient(config);
   }
   return client;
 }
 
 class SesEmailProvider extends EmailProvider {
   async send({ to, code, expiryMinutes = 10 }) {
-    if (!env.AWS.accessKeyId || !env.AWS.secretAccessKey) {
-      throw new Error('AWS credentials are required for SES email delivery');
-    }
-
     const command = new SendEmailCommand({
       Source: env.EMAIL_FROM,
       Destination: { ToAddresses: [to] },

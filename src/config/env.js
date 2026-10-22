@@ -22,10 +22,16 @@ const env = {
   CORS_ORIGIN: optional('CORS_ORIGIN', '*'),
 
   DATABASE_URL: required('DATABASE_URL'),
-  DB_CONNECTION_LIMIT: toInt(process.env.DB_CONNECTION_LIMIT, 50),
+  // Per process. Production runs several processes on several servers, so the
+  // total (servers × processes × limit) must stay under the database's
+  // max_connections — set it explicitly there (10 is the planned value).
+  DB_CONNECTION_LIMIT: toInt(process.env.DB_CONNECTION_LIMIT, 20),
 
   REDIS_HOST: optional('REDIS_HOST', '127.0.0.1'),
   REDIS_PORT: toInt(process.env.REDIS_PORT, 6379),
+  // Managed Redis (ElastiCache) requires TLS and an AUTH token.
+  REDIS_TLS: optional('REDIS_TLS') === 'true',
+  REDIS_PASSWORD: optional('REDIS_PASSWORD'),
 
   JWT_ACCESS_SECRET: required('JWT_ACCESS_SECRET', 'dev_access_secret'),
   JWT_REFRESH_SECRET: required('JWT_REFRESH_SECRET', 'dev_refresh_secret'),
@@ -69,6 +75,9 @@ const env = {
     max: toInt(process.env.RATE_LIMIT_MAX, 120),                   // 120 req/min per IP
     otpMax: toInt(process.env.OTP_RATE_LIMIT_MAX, 3),              // 3 OTP sends/min
     emailOtpMax: toInt(process.env.EMAIL_OTP_RATE_LIMIT_MAX, 3),   // 3 email OTP sends/min
+    // 'redis' shares counters across every API process (required once more
+    // than one process serves traffic); 'memory' keeps them per process.
+    store: optional('RATE_LIMIT_STORE', 'memory'),
   },
 
   LOG_LEVEL: optional('LOG_LEVEL', 'info'),

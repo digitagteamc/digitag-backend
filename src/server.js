@@ -16,6 +16,11 @@ async function bootstrap() {
   const server = app.listen(env.PORT, () => {
     logger.info(`DigiTag API running on port ${env.PORT} [${env.NODE_ENV}]`);
   });
+  // Keep idle connections open longer than the load balancer does (ALB
+  // default idle timeout: 60s). With Node's 5s default, Node closes a socket
+  // the ALB still considers reusable and the next request on it gets a 502.
+  server.keepAliveTimeout = 65 * 1000;
+  server.headersTimeout = 66 * 1000;
 
   const shutdown = async (signal) => {
     logger.info(`${signal} received. Shutting down...`);
