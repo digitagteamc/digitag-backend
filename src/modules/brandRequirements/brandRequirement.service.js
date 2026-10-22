@@ -21,6 +21,8 @@ function shapeRequirement(post, pitchCount) {
   return {
     id: post.id,
     brandUserId: post.userId,
+    title: post.title,
+    budget: post.budget,
     targetType: post.requirementTarget || 'CREATORS',
     freelancersCanSee: post.targetRoles.includes(ROLES.FREELANCER),
     category: post.category,
@@ -43,7 +45,9 @@ async function createRequirement(user, data) {
   if (user.role !== ROLES.BRAND) throw ApiError.forbidden('Only brand accounts can post a requirement');
   const post = await postService.createPost(user, {
     description: data.message || '',
+    title: data.title || null,
     category: data.category || null,
+    budget: data.budget || null,
     freelancerRequired: data.targetType === 'AGENCIES' || data.freelancersCanSee === true,
     requirementTarget: data.targetType || 'CREATORS',
     creatorCountMin: data.creatorCountMin,

@@ -5,7 +5,9 @@ const createRequirementSchema = Joi.object({
   // The composer's "Freelancers can also see this" checkbox. AGENCIES
   // requirements always reach freelancers regardless.
   freelancersCanSee: Joi.boolean().default(false),
+  title: Joi.string().trim().max(150).allow('', null).optional(),
   category: Joi.string().trim().max(100).allow('', null).optional(),
+  budget: Joi.string().trim().max(100).allow('', null).optional(),
   creatorCountMin: Joi.number().integer().min(0).allow(null).optional(),
   creatorCountMax: Joi.number().integer().min(0).allow(null).optional(),
   genderPreference: Joi.string().trim().max(50).allow('', null).optional(),
