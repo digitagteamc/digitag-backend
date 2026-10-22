@@ -1047,6 +1047,7 @@ model MediaChannel {
   catalogItems ChannelCatalogItem[]
   adRequests   AdRequest[]
   users        ChannelUser[]
+  showcases    ChannelShowcase[]
 
   @@index([type, isActive, subscriberCount])
 }
@@ -1195,4 +1196,28 @@ model ChannelUser {
   channel MediaChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@index([channelId])
+}
+
+// A past brand collaboration a channel showcases from the CRM — shown on the
+// channel's profile in the brand app. Entered by the channel, so it can cover
+// deals done before (or outside) Digitag; not derived from AdRequests.
+model ChannelShowcase {
+  id           String    @id @default(uuid())
+  channelId    String
+  brandName    String
+  brandLogoUrl String?
+  title        String
+  description  String?
+  // Image or video of the delivered ad.
+  mediaUrl     String?
+  adTypeName   String?
+  campaignDate DateTime?
+  isActive     Boolean   @default(true)
+  sortOrder    Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  channel MediaChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, isActive, sortOrder])
 }

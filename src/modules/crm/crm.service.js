@@ -5,7 +5,8 @@ const env = require('../../config/env');
 const { ApiError } = require('../../utils/apiResponse');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
 const adRequestService = require('../ad-requests/adRequest.service');
-const { catalogItemSelect } = require('../channels/channel.service');
+const { catalogItemSelect, showcaseSelect } = require('../channels/channel.service');
+const s3Upload = require('../../services/s3/s3Upload.service');
 
 const CRM_TOKEN_TTL = '12h';
 
@@ -241,6 +242,45 @@ async function archiveCatalogItem(channelUser, id) {
   await prisma.channelCatalogItem.update({ where: { id }, data: { isActive: false } });
 }
 
+// -------------------------
+// Showcase (past brand collaborations)
+// -------------------------
+
+async function listShowcase(channelUser) {
+  return prisma.channelShowcase.findMany({
+    where: { channelId: channelUser.channelId, isActive: true },
+    orderBy: [{ sortOrder: 'asc' }, { campaignDate: 'desc' }, { createdAt: 'desc' }],
+    select: showcaseSelect,
+  });
+}
+
+async function createShowcase(channelUser, data) {
+  return prisma.channelShowcase.create({
+    data: { ...emptyToNull(data), channelId: channelUser.channelId },
+    select: showcaseSelect,
+  });
+}
+
+async function updateShowcase(channelUser, id, data) {
+  const item = await prisma.channelShowcase.findFirst({ where: { id, channelId: channelUser.channelId, isActive: true } });
+  if (!item) throw ApiError.notFound('Showcase entry not found');
+  return prisma.channelShowcase.update({ where: { id }, data: emptyToNull(data), select: showcaseSelect });
+}
+
+async function deleteShowcase(channelUser, id) {
+  const item = await prisma.channelShowcase.findFirst({ where: { id, channelId: channelUser.channelId, isActive: true } });
+  if (!item) throw ApiError.notFound('Showcase entry not found');
+  await prisma.channelShowcase.update({ where: { id }, data: { isActive: false } });
+}
+
+// -------------------------
+// Uploads (logo, demo ad videos, showcase media)
+// -------------------------
+
+async function presignUpload(channelUser, { originalName, mimeType }) {
+  return s3Upload.getPresignedUploadUrl({ prefix: `channels/${channelUser.channelId}`, originalName, mimeType });
+}
+
 module.exports = {
   login,
   getMe,
@@ -259,4 +299,9 @@ module.exports = {
   createCatalogItem,
   updateCatalogItem,
   archiveCatalogItem,
+  listShowcase,
+  createShowcase,
+  updateShowcase,
+  deleteShowcase,
+  presignUpload,
 };

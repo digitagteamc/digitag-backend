@@ -47,9 +47,25 @@ const archiveCatalogItem = asyncHandler(async (req, res) => {
   return ok(res, null, MESSAGES.GENERIC.DELETED);
 });
 
+const listShowcase = asyncHandler(async (req, res) => ok(res, await service.listShowcase(req.channelUser)));
+const createShowcase = asyncHandler(async (req, res) => {
+  const data = await service.createShowcase(req.channelUser, req.body);
+  return success(res, { statusCode: STATUS.CREATED, message: MESSAGES.GENERIC.CREATED, data });
+});
+const updateShowcase = asyncHandler(async (req, res) =>
+  ok(res, await service.updateShowcase(req.channelUser, req.params.id, req.body), MESSAGES.GENERIC.UPDATED));
+const deleteShowcase = asyncHandler(async (req, res) => {
+  await service.deleteShowcase(req.channelUser, req.params.id);
+  return ok(res, null, MESSAGES.GENERIC.DELETED);
+});
+
+const presignUpload = asyncHandler(async (req, res) => ok(res, await service.presignUpload(req.channelUser, req.body)));
+
 module.exports = {
   login, me, changePassword, updateChannel,
   listTeam, createTeamMember, updateTeamMember,
   stats, listAdRequests, getAdRequest, updateAdRequestStatus, addNote,
   adTypes, listCatalog, createCatalogItem, updateCatalogItem, archiveCatalogItem,
+  listShowcase, createShowcase, updateShowcase, deleteShowcase,
+  presignUpload,
 };

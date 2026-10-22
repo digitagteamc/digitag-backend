@@ -2,6 +2,9 @@ const Joi = require('joi');
 
 const createRequirementSchema = Joi.object({
   targetType: Joi.string().valid('CREATORS', 'AGENCIES').default('CREATORS'),
+  // The composer's "Freelancers can also see this" checkbox. AGENCIES
+  // requirements always reach freelancers regardless.
+  freelancersCanSee: Joi.boolean().default(false),
   category: Joi.string().trim().max(100).allow('', null).optional(),
   creatorCountMin: Joi.number().integer().min(0).allow(null).optional(),
   creatorCountMax: Joi.number().integer().min(0).allow(null).optional(),

@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const rateLimit = require('express-rate-limit');
+const { createRateLimiter } = require('../../utils/rateLimiter');
 
 const controller = require('./crm.controller');
 const v = require('./crm.validation');
@@ -11,11 +11,9 @@ const { idParam } = require('../../validations/common.validation');
 // scoped to the logged-in ChannelUser's own channel.
 const router = Router();
 
-const loginLimiter = rateLimit({
+const loginLimiter = createRateLimiter('crm-login', {
   windowMs: 15 * 60 * 1000,
   max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { success: false, message: 'Too many login attempts. Try again later.' },
 });
 
@@ -46,5 +44,14 @@ router.get('/catalog', validateRequest({ query: v.catalogQuery }), controller.li
 router.post('/catalog', validateRequest({ body: v.createCatalogItem }), controller.createCatalogItem);
 router.put('/catalog/:id', validateRequest({ params: idParam, body: v.updateCatalogItem }), controller.updateCatalogItem);
 router.delete('/catalog/:id', validateRequest({ params: idParam }), controller.archiveCatalogItem);
+
+// Showcase — past brand collaborations shown on the channel's profile
+router.get('/showcase', controller.listShowcase);
+router.post('/showcase', validateRequest({ body: v.createShowcase }), controller.createShowcase);
+router.put('/showcase/:id', validateRequest({ params: idParam, body: v.updateShowcase }), controller.updateShowcase);
+router.delete('/showcase/:id', validateRequest({ params: idParam }), controller.deleteShowcase);
+
+// Direct-to-S3 uploads for logos, demo ad videos and showcase media
+router.post('/uploads/presigned', validateRequest({ body: v.presignUpload }), controller.presignUpload);
 
 module.exports = router;

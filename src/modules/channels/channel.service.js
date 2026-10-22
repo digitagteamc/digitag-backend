@@ -33,6 +33,19 @@ const catalogItemSelect = {
   adType: { select: { id: true, name: true, iconUrl: true, accentColor: true } },
 };
 
+// Past brand collaborations the channel entered in the CRM.
+const showcaseSelect = {
+  id: true,
+  brandName: true,
+  brandLogoUrl: true,
+  title: true,
+  description: true,
+  mediaUrl: true,
+  adTypeName: true,
+  campaignDate: true,
+  sortOrder: true,
+};
+
 /** Ad types offered by each channel (from its active catalog), with item
  *  count and starting price per type — one grouped query for many channels. */
 async function adTypeSummaryByChannel(channelIds) {
@@ -113,8 +126,16 @@ async function listChannels(query = {}) {
 async function getChannel(id) {
   const channel = await prisma.mediaChannel.findFirst({ where: { id, isActive: true }, select: publicChannelSelect });
   if (!channel) throw ApiError.notFound('Channel not found');
-  const adTypes = (await adTypeSummaryByChannel([id])).get(id) || [];
-  return { ...channel, adTypes, startingPrice: startingPrice(adTypes) };
+  const [summary, pastCollaborations] = await Promise.all([
+    adTypeSummaryByChannel([id]),
+    prisma.channelShowcase.findMany({
+      where: { channelId: id, isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { campaignDate: 'desc' }, { createdAt: 'desc' }],
+      select: showcaseSelect,
+    }),
+  ]);
+  const adTypes = summary.get(id) || [];
+  return { ...channel, adTypes, startingPrice: startingPrice(adTypes), pastCollaborations };
 }
 
 async function getCatalog(channelId, { adTypeId } = {}) {
@@ -137,4 +158,4 @@ async function listAdTypes() {
   });
 }
 
-module.exports = { listChannels, getChannel, getCatalog, listAdTypes, catalogItemSelect, publicChannelSelect };
+module.exports = { listChannels, getChannel, getCatalog, listAdTypes, catalogItemSelect, publicChannelSelect, showcaseSelect };

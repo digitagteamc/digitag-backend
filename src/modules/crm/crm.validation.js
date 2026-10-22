@@ -87,6 +87,33 @@ const catalogQuery = Joi.object({
   includeInactive: Joi.boolean().optional(),
 }).unknown(true);
 
+const showcaseFields = {
+  brandName: Joi.string().trim().min(1).max(120),
+  brandLogoUrl: url.allow('', null),
+  title: Joi.string().trim().min(1).max(150),
+  description: Joi.string().trim().max(2000).allow('', null),
+  mediaUrl: url.allow('', null),
+  adTypeName: Joi.string().trim().max(100).allow('', null),
+  campaignDate: Joi.date().iso().allow(null),
+  sortOrder: Joi.number().integer(),
+};
+
+const createShowcase = Joi.object({
+  ...showcaseFields,
+  brandName: showcaseFields.brandName.required(),
+  title: showcaseFields.title.required(),
+});
+
+const updateShowcase = Joi.object(showcaseFields).min(1);
+
+// Logos/showcase images plus demo ad videos.
+const UPLOAD_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm'];
+
+const presignUpload = Joi.object({
+  originalName: Joi.string().max(255).required(),
+  mimeType: Joi.string().valid(...UPLOAD_MIME_TYPES).required(),
+});
+
 module.exports = {
   login,
   changePassword,
@@ -99,4 +126,7 @@ module.exports = {
   createCatalogItem,
   updateCatalogItem,
   catalogQuery,
+  createShowcase,
+  updateShowcase,
+  presignUpload,
 };
