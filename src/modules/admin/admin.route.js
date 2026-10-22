@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const rateLimit = require('express-rate-limit');
+const { createRateLimiter } = require('../../utils/rateLimiter');
 const controller = require('./admin.controller');
 const { authenticateAdmin, requireSuperAdmin } = require('../../middlewares/adminAuthMiddleware');
 const { validateRequest } = require('../../middlewares/validateMiddleware');
@@ -8,11 +8,9 @@ const v = require('./admin.validation');
 
 const router = Router();
 
-const adminLoginLimiter = rateLimit({
+const adminLoginLimiter = createRateLimiter('admin-login', {
   windowMs: 15 * 60 * 1000,
   max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { success: false, message: 'Too many login attempts. Try again later.' },
 });
 

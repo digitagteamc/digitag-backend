@@ -32,12 +32,39 @@ const adRequestRoutes = require('../modules/ad-requests/adRequest.route');
 const crmRoutes = require('../modules/crm/crm.route');
 const brandAdminRoutes = require('../modules/brand-admin/brandAdmin.route');
 const env = require('../config/env');
+const { prisma } = require('../config/db');
+const cache = require('../services/cache/cache.service');
 const { optionalAuth } = require('../middlewares/authMiddleware');
 
 const router = Router();
 
+// Liveness — the load balancer's health check. Deliberately checks nothing
+// external: a database blip must not make every server look unhealthy at
+// once and get them all pulled from the load balancer.
 router.get('/health', (_req, res) => {
   res.json({ success: true, service: 'digitag-api', time: new Date().toISOString() });
+});
+
+// Readiness — for external monitoring and alarms. Reports whether the
+// database and Redis answer; 503 when a required one doesn't. Redis is only
+// required where it backs the shared rate limits (RATE_LIMIT_STORE=redis).
+const READY_CHECK_TIMEOUT_MS = 3000;
+const withTimeout = (promise) =>
+  Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(false), READY_CHECK_TIMEOUT_MS))]);
+
+router.get('/health/ready', async (_req, res) => {
+  const [database, redis] = await Promise.all([
+    withTimeout(prisma.$queryRaw`SELECT 1`.then(() => true, () => false)),
+    withTimeout(cache.ping()),
+  ]);
+  const redisRequired = env.RATE_LIMIT.store === 'redis';
+  const ready = database && (redis || !redisRequired);
+  res.status(ready ? 200 : 503).json({
+    success: ready,
+    service: 'digitag-api',
+    checks: { database, redis },
+    time: new Date().toISOString(),
+  });
 });
 
 // Remote flags the app reads on launch — a fast, no-deploy way to show/hide

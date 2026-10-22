@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const rateLimit = require('express-rate-limit');
+const { createRateLimiter } = require('../../utils/rateLimiter');
 
 const env = require('../../config/env');
 const controller = require('./emailVerification.controller');
@@ -9,11 +9,9 @@ const { startSchema, verifySchema } = require('./emailVerification.validation');
 
 const router = Router();
 
-const emailOtpLimiter = rateLimit({
+const emailOtpLimiter = createRateLimiter('email-otp', {
   windowMs: env.RATE_LIMIT.windowMs,
   max: env.RATE_LIMIT.emailOtpMax,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { success: false, message: 'Too many requests. Try again later.' },
 });
 
