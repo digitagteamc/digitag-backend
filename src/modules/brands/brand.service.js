@@ -47,12 +47,20 @@ function emptyToNull(data) {
 // Fields an admin verified — changing any of them sends the brand back to review.
 const KYC_FIELDS = ['name', 'pan', 'gstin'];
 
+// Characters 3–12 of a GSTIN are the holder's PAN.
+function panFromGstin(gstin) {
+  const pan = (gstin || '').slice(2, 12);
+  if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) throw ApiError.badRequest('Enter a valid GST number (15 characters, e.g. 36ABCDE1234F1Z5).');
+  return pan;
+}
+
 async function createProfile(userId, data) {
   const user = await ensureBrandUser(userId);
   const existing = await prisma.brandProfile.findUnique({ where: { userId } });
   if (existing) throw ApiError.conflict(MESSAGES.PROFILE.ALREADY_EXISTS);
 
   const clean = emptyToNull(data);
+  if (!clean.pan) clean.pan = panFromGstin(clean.gstin);
   await ensureEmailUsable(userId, clean.email, user.accountId);
 
   const tagId = await generateTagId({ role: ROLES.BRAND, model: 'brandProfile' });
@@ -69,6 +77,7 @@ async function updateProfile(userId, data) {
   if (!existing) throw ApiError.notFound(MESSAGES.PROFILE.NOT_FOUND);
 
   const clean = emptyToNull(data);
+  if (clean.gstin && !clean.pan) clean.pan = panFromGstin(clean.gstin);
   if (clean.email && clean.email !== existing.email) {
     await ensureEmailUsable(userId, clean.email, user.accountId);
   }

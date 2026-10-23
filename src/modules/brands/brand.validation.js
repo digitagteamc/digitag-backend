@@ -25,12 +25,14 @@ const baseBrandFields = {
   youtubeHandle: Joi.string().trim().max(100).allow('', null).optional(),
 };
 
-// Brand Registration: name + PAN required; everything else optional.
+// Brand Registration: name + PAN required; everything else optional. The
+// Complete Profile screen only asks for GST, so a GSTIN stands in for the PAN
+// (the service derives the PAN embedded in it).
 const createBrandProfileSchema = Joi.object({
   ...baseBrandFields,
   name: baseBrandFields.name.required(),
-  pan: baseBrandFields.pan.required(),
-});
+  pan: baseBrandFields.pan.optional(),
+}).or('pan', 'gstin');
 
 const updateBrandProfileSchema = Joi.object({ ...baseBrandFields, pan: baseBrandFields.pan.optional() }).min(1);
 
