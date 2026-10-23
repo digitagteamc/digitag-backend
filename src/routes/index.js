@@ -31,6 +31,7 @@ const channelRoutes = require('../modules/channels/channel.route');
 const adRequestRoutes = require('../modules/ad-requests/adRequest.route');
 const crmRoutes = require('../modules/crm/crm.route');
 const brandAdminRoutes = require('../modules/brand-admin/brandAdmin.route');
+const celebrityApplicationRoutes = require('../modules/celebrity-applications/celebrityApplication.route');
 const env = require('../config/env');
 const { prisma } = require('../config/db');
 const cache = require('../services/cache/cache.service');
@@ -83,6 +84,7 @@ router.use('/auth', authRoutes);
 // celebrities). Before /admin because the admin router authenticates every
 // request that reaches it; this one authenticates per route.
 router.use('/admin', brandAdminRoutes);
+router.use('/admin', celebrityApplicationRoutes.adminRouter);
 router.use('/admin', adminRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/users', userRoutes);
@@ -111,6 +113,7 @@ router.use('/brand-requirements', brandRequirementRoutes);
 router.use('/channels', channelRoutes);
 router.use('/ad-requests', adRequestRoutes);
 router.use('/crm', crmRoutes);
+router.use('/celebrity-applications', celebrityApplicationRoutes.publicRouter);
 router.use(brandCatalogRoutes);
 
 module.exports = router;

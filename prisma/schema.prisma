@@ -1221,3 +1221,55 @@ model ChannelShowcase {
 
   @@index([channelId, isActive, sortOrder])
 }
+
+enum CelebrityApplicationStatus {
+  REQUESTED // contact form sent, onboarding not finished
+  SUBMITTED // onboarding signed, awaiting admin review
+  APPROVED
+  REJECTED
+}
+
+// A celebrity / creator applying through the website's Celebrity panel. The
+// contact form creates the row (so a lead isn't lost if they stop midway);
+// the signed onboarding completes it. Public, unauthenticated — the
+// onboarding step proves it's the same visitor with submitTokenHash.
+model CelebrityApplication {
+  id     String                     @id @default(uuid())
+  status CelebrityApplicationStatus @default(REQUESTED)
+
+  // Contact form
+  name            String
+  phone           String
+  email           String
+  category        String
+  availability    String?
+  interested      Boolean  @default(true)
+  termsAcceptedAt DateTime
+
+  // Onboarding (steps 2–6)
+  onboardingDate    DateTime?
+  effectiveDate     DateTime?
+  legalName         String?
+  partnerType       String?
+  instagramHandles  String[]  @default([])
+  youtubeChannels   Json? // [{ name, url }]
+  brandIntegrations String[]  @default([])
+  managementAgreed  Boolean   @default(false)
+  signatureKey      String? // private S3 object, served to admins via signed URL
+  signedName        String?
+  signedDate        DateTime?
+  submittedAt       DateTime?
+
+  submitTokenHash String
+  ipAddress       String?
+  userAgent       String?
+
+  rejectionReason String?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([email])
+}
