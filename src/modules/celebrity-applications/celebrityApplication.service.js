@@ -4,15 +4,24 @@ const { parsePagination, buildPaginationMeta } = require('../../utils/pagination
 const s3UploadService = require('../../services/s3/s3Upload.service');
 const logger = require('../../utils/logger');
 
-// Data URL → buffer, checking the bytes really are a PNG / JPEG.
-function decodeSignature(dataUrl) {
-  const [, mime, b64] = dataUrl.match(/^data:(image\/(?:png|jpeg));base64,(.+)$/) || [];
-  if (!mime) throw ApiError.badRequest('Signature must be a PNG or JPG image.');
-  const buffer = Buffer.from(b64, 'base64');
-  const isPng = buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
-  if (!(mime === 'image/png' ? isPng : isJpeg)) throw ApiError.badRequest('Signature must be a PNG or JPG image.');
-  return { buffer, mime, ext: mime === 'image/png' ? '.png' : '.jpg' };
+const IMAGE_TYPES = {
+  'image/png': { ext: '.png', test: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
+  'image/jpeg': { ext: '.jpg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  'image/webp': { ext: '.webp', test: (b) => b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP' },
+};
+
+// Data URL → buffer, checking the bytes really are one of `allowed`.
+function decodeImage(dataUrl, allowed, errorMessage) {
+  const [, mime, b64] = dataUrl.match(/^data:(image\/[a-z]+);base64,(.+)$/) || [];
+  const type = allowed.includes(mime) && IMAGE_TYPES[mime];
+  const buffer = type && Buffer.from(b64, 'base64');
+  if (!type || !type.test(buffer)) throw ApiError.badRequest(errorMessage);
+  return { buffer, mime, ext: type.ext };
+}
+
+async function uploadImage({ buffer, mime, ext }, prefix, name) {
+  const { key } = await s3UploadService.uploadBuffer({ buffer, mimeType: mime, prefix, originalName: `${name}${ext}` });
+  return key;
 }
 
 async function logActivity(admin, action, target) {
@@ -28,13 +37,20 @@ async function logActivity(admin, action, target) {
 /** Signed onboarding (steps 1–6), filled in by the DigiTag team with the
  *  celebrity. Creates the application straight into the review queue. */
 async function submitOnboarding(data, meta) {
-  const { buffer, mime, ext } = decodeSignature(data.signature);
-  const { key } = await s3UploadService.uploadBuffer({
-    buffer, mimeType: mime, prefix: 'celebrity-signatures', originalName: `signature${ext}`,
-  });
+  // Decode both first so a bad photo doesn't leave the signature uploaded.
+  const signature = decodeImage(data.signature, ['image/png', 'image/jpeg'], 'Signature must be a PNG or JPG image.');
+  const photo = data.photo
+    ? decodeImage(data.photo, ['image/png', 'image/jpeg', 'image/webp'], 'Profile photo must be a JPG, PNG or WEBP image.')
+    : null;
 
+  const keys = [];
   const now = new Date();
   try {
+    const signatureKey = await uploadImage(signature, 'celebrity-signatures', 'signature');
+    keys.push(signatureKey);
+    const photoKey = photo ? await uploadImage(photo, 'celebrity-photos', 'photo') : null;
+    if (photoKey) keys.push(photoKey);
+
     const application = await prisma.celebrityApplication.create({
       data: {
         status: 'SUBMITTED',
@@ -45,11 +61,13 @@ async function submitOnboarding(data, meta) {
         effectiveDate: data.effectiveDate,
         legalName: data.legalName,
         partnerType: data.partnerType,
-        instagramHandles: data.instagramHandles,
+        photoKey,
+        instagramHandles: data.instagramAccounts.map((a) => a.handle),
+        instagramAccounts: data.instagramAccounts,
         youtubeChannels: data.youtubeChannels,
         brandIntegrations: data.brandIntegrations,
         managementAgreed: true,
-        signatureKey: key,
+        signatureKey,
         signedName: data.signedName,
         signedDate: data.signedDate,
         submittedAt: now,
@@ -61,8 +79,8 @@ async function submitOnboarding(data, meta) {
     logger.info('Celebrity onboarding submitted', { id: application.id });
     return application;
   } catch (err) {
-    // Don't leave an orphaned signature in S3.
-    await s3UploadService.deleteObject(key).catch(() => {});
+    // Don't leave orphaned uploads in S3.
+    await Promise.all(keys.map((k) => s3UploadService.deleteObject(k).catch(() => {})));
     throw err;
   }
 }
@@ -99,9 +117,10 @@ async function listApplications(query = {}) {
 async function getApplication(id) {
   const application = await prisma.celebrityApplication.findUnique({ where: { id } });
   if (!application) throw ApiError.notFound('Application not found');
-  const { submitTokenHash, signatureKey, ...rest } = application;
-  const signatureUrl = await s3UploadService.getSignedReadUrl(signatureKey).catch(() => null);
-  return { ...rest, signatureUrl };
+  const { submitTokenHash, signatureKey, photoKey, ...rest } = application;
+  const signedUrl = (key) => (key ? s3UploadService.getSignedReadUrl(key).catch(() => null) : null);
+  const [signatureUrl, photoUrl] = await Promise.all([signedUrl(signatureKey), signedUrl(photoKey)]);
+  return { ...rest, signatureUrl, photoUrl };
 }
 
 async function reviewApplication(admin, id, decision, reason = null) {

@@ -1251,8 +1251,10 @@ model CelebrityApplication {
   effectiveDate     DateTime?
   legalName         String?
   partnerType       String?
+  photoKey          String? // private S3 object, served to admins via signed URL
   instagramHandles  String[]  @default([])
-  youtubeChannels   Json? // [{ name, url }]
+  instagramAccounts Json? // [{ handle, followers }], followers as typed, e.g. "2.4M"
+  youtubeChannels   Json? // [{ name, url, subscribers }]
   brandIntegrations String[]  @default([])
   managementAgreed  Boolean   @default(false)
   signatureKey      String? // private S3 object, served to admins via signed URL
