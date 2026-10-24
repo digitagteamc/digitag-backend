@@ -1,17 +1,8 @@
-const crypto = require('crypto');
 const { prisma } = require('../../config/db');
 const { ApiError } = require('../../utils/apiResponse');
 const { parsePagination, buildPaginationMeta } = require('../../utils/pagination');
 const s3UploadService = require('../../services/s3/s3Upload.service');
 const logger = require('../../utils/logger');
-
-const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
-
-function tokenMatches(token, hash) {
-  const a = Buffer.from(hashToken(token), 'hex');
-  const b = Buffer.from(hash, 'hex');
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
 
 // Data URL → buffer, checking the bytes really are a PNG / JPEG.
 function decodeSignature(dataUrl) {
@@ -34,66 +25,46 @@ async function logActivity(admin, action, target) {
 // Public — website Celebrity panel
 // -------------------------
 
-/** Contact form. Returns a one-time token the onboarding step must send back. */
-async function createApplication(data, meta) {
-  const submitToken = crypto.randomBytes(32).toString('hex');
-  const { termsAccepted, ...fields } = data;
-  const application = await prisma.celebrityApplication.create({
-    data: {
-      ...fields,
-      availability: fields.availability || null,
-      termsAcceptedAt: new Date(),
-      submitTokenHash: hashToken(submitToken),
-      ipAddress: meta.ip || null,
-      userAgent: (meta.userAgent || '').slice(0, 500) || null,
-    },
-    select: { id: true, status: true },
-  });
-  return { ...application, submitToken };
-}
-
-/** Signed onboarding (steps 2–6). One submission per application. */
-async function submitOnboarding(id, data) {
-  const application = await prisma.celebrityApplication.findUnique({
-    where: { id },
-    select: { id: true, status: true, submitTokenHash: true },
-  });
-  // Same error for unknown id and wrong token — no probing for valid ids.
-  if (!application || !tokenMatches(data.submitToken, application.submitTokenHash)) {
-    throw ApiError.forbidden('This onboarding link is invalid. Please start again.');
-  }
-  if (application.status !== 'REQUESTED') throw ApiError.conflict('This onboarding has already been submitted.');
-
+/** Signed onboarding (steps 1–6), filled in by the DigiTag team with the
+ *  celebrity. Creates the application straight into the review queue. */
+async function submitOnboarding(data, meta) {
   const { buffer, mime, ext } = decodeSignature(data.signature);
   const { key } = await s3UploadService.uploadBuffer({
     buffer, mimeType: mime, prefix: 'celebrity-signatures', originalName: `signature${ext}`,
   });
 
-  const { count } = await prisma.celebrityApplication.updateMany({
-    where: { id, status: 'REQUESTED' },
-    data: {
-      status: 'SUBMITTED',
-      onboardingDate: data.onboardingDate,
-      effectiveDate: data.effectiveDate,
-      legalName: data.legalName,
-      partnerType: data.partnerType,
-      instagramHandles: data.instagramHandles,
-      youtubeChannels: data.youtubeChannels,
-      brandIntegrations: data.brandIntegrations,
-      managementAgreed: true,
-      signatureKey: key,
-      signedName: data.signedName,
-      signedDate: data.signedDate,
-      submittedAt: new Date(),
-    },
-  });
-  if (count === 0) {
-    // Lost a race with a duplicate submit — drop the orphaned upload.
-    await s3UploadService.deleteObject(key);
-    throw ApiError.conflict('This onboarding has already been submitted.');
+  const now = new Date();
+  try {
+    const application = await prisma.celebrityApplication.create({
+      data: {
+        status: 'SUBMITTED',
+        name: data.legalName,
+        category: data.partnerType,
+        termsAcceptedAt: now,
+        onboardingDate: data.onboardingDate,
+        effectiveDate: data.effectiveDate,
+        legalName: data.legalName,
+        partnerType: data.partnerType,
+        instagramHandles: data.instagramHandles,
+        youtubeChannels: data.youtubeChannels,
+        brandIntegrations: data.brandIntegrations,
+        managementAgreed: true,
+        signatureKey: key,
+        signedName: data.signedName,
+        signedDate: data.signedDate,
+        submittedAt: now,
+        ipAddress: meta.ip || null,
+        userAgent: (meta.userAgent || '').slice(0, 500) || null,
+      },
+      select: { id: true, status: true },
+    });
+    logger.info('Celebrity onboarding submitted', { id: application.id });
+    return application;
+  } catch (err) {
+    // Don't leave an orphaned signature in S3.
+    await s3UploadService.deleteObject(key).catch(() => {});
+    throw err;
   }
-  logger.info('Celebrity onboarding submitted', { id });
-  return { id, status: 'SUBMITTED' };
 }
 
 // -------------------------
@@ -156,4 +127,4 @@ async function reviewApplication(admin, id, decision, reason = null) {
   return getApplication(id);
 }
 
-module.exports = { createApplication, submitOnboarding, listApplications, getApplication, reviewApplication };
+module.exports = { submitOnboarding, listApplications, getApplication, reviewApplication };

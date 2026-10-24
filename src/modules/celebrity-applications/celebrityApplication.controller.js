@@ -7,13 +7,11 @@ const service = require('./celebrityApplication.service');
 const ok = (res, data, message = MESSAGES.GENERIC.FETCHED) => success(res, { message, data });
 
 module.exports = {
-  create: asyncHandler(async (req, res) => success(res, {
+  submitOnboarding: asyncHandler(async (req, res) => success(res, {
     statusCode: STATUS.CREATED,
-    message: 'Request received',
-    data: await service.createApplication(req.body, { ip: req.ip, userAgent: req.get('user-agent') }),
+    message: 'Onboarding submitted',
+    data: await service.submitOnboarding(req.body, { ip: req.ip, userAgent: req.get('user-agent') }),
   })),
-  submitOnboarding: asyncHandler(async (req, res) =>
-    ok(res, await service.submitOnboarding(req.params.id, req.body), 'Onboarding submitted')),
 
   list: asyncHandler(async (req, res) => {
     const { items, meta } = await service.listApplications(req.query);

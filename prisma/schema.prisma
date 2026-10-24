@@ -1229,18 +1229,18 @@ enum CelebrityApplicationStatus {
   REJECTED
 }
 
-// A celebrity / creator applying through the website's Celebrity panel. The
-// contact form creates the row (so a lead isn't lost if they stop midway);
-// the signed onboarding completes it. Public, unauthenticated — the
-// onboarding step proves it's the same visitor with submitTokenHash.
+// A celebrity / creator onboarded through the website's Celebrity panel. The
+// DigiTag team fills in the onboarding with the celebrity, so the row is
+// created already SUBMITTED. REQUESTED rows (and phone / email /
+// submitTokenHash) are from the old contact-form-first flow.
 model CelebrityApplication {
   id     String                     @id @default(uuid())
   status CelebrityApplicationStatus @default(REQUESTED)
 
-  // Contact form
+  // Contact (name = legal name, category = partner type for team onboardings)
   name            String
-  phone           String
-  email           String
+  phone           String?
+  email           String?
   category        String
   availability    String?
   interested      Boolean  @default(true)
@@ -1260,7 +1260,7 @@ model CelebrityApplication {
   signedDate        DateTime?
   submittedAt       DateTime?
 
-  submitTokenHash String
+  submitTokenHash String?
   ipAddress       String?
   userAgent       String?
 

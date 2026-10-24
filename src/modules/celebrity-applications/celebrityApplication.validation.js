@@ -1,5 +1,5 @@
 const Joi = require('joi');
-const { email, pagination, uuid } = require('../../validations/common.validation');
+const { pagination, uuid } = require('../../validations/common.validation');
 
 // Option ids/labels match the website's Celebrity panel
 // (digitag-website/app/Celebrity-panel/BrandStep.tsx, OnboardingFlow.tsx).
@@ -10,20 +10,7 @@ const BRAND_INTEGRATIONS = [
 ];
 const STATUSES = ['REQUESTED', 'SUBMITTED', 'APPROVED', 'REJECTED'];
 
-const createApplication = Joi.object({
-  name: Joi.string().trim().min(2).max(120).required(),
-  phone: Joi.string().trim().pattern(/^[+\d][\d\s-]{6,15}$/).required()
-    .messages({ 'string.pattern.base': 'Enter a valid mobile number' }),
-  email: email.trim().lowercase().max(255).required(),
-  category: Joi.string().trim().min(2).max(100).required(),
-  availability: Joi.string().trim().max(100).allow('', null).optional(),
-  interested: Joi.boolean().default(true),
-  termsAccepted: Joi.boolean().valid(true).required()
-    .messages({ 'any.only': 'Please accept the Terms & Conditions to continue.' }),
-});
-
 const submitOnboarding = Joi.object({
-  submitToken: Joi.string().hex().length(64).required(),
   onboardingDate: Joi.date().iso().required(),
   effectiveDate: Joi.date().iso().required(),
   legalName: Joi.string().trim().min(2).max(150).required(),
@@ -58,4 +45,4 @@ const reject = Joi.object({
 
 const idParam = Joi.object({ id: uuid.required() });
 
-module.exports = { createApplication, submitOnboarding, listQuery, reject, idParam, BRAND_INTEGRATIONS, PARTNER_TYPES };
+module.exports = { submitOnboarding, listQuery, reject, idParam, BRAND_INTEGRATIONS, PARTNER_TYPES };

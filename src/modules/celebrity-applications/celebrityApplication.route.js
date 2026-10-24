@@ -6,28 +6,17 @@ const v = require('./celebrityApplication.validation');
 const { authenticateAdmin, requireSuperAdmin } = require('../../middlewares/adminAuthMiddleware');
 const { validateRequest } = require('../../middlewares/validateMiddleware');
 
-// Public: the website's Celebrity panel (no account — open write endpoints,
+// Public: the website's Celebrity panel (no account — open write endpoint,
 // so rate-limited per IP).
 const publicRouter = Router();
 
-const createLimiter = createRateLimiter('celebrity-apply', {
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: { success: false, message: 'Too many requests. Try again later.' },
-});
 const submitLimiter = createRateLimiter('celebrity-onboarding', {
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { success: false, message: 'Too many attempts. Try again later.' },
 });
 
-publicRouter.post('/', createLimiter, validateRequest({ body: v.createApplication }), c.create);
-publicRouter.post(
-  '/:id/onboarding',
-  submitLimiter,
-  validateRequest({ params: v.idParam, body: v.submitOnboarding }),
-  c.submitOnboarding,
-);
+publicRouter.post('/', submitLimiter, validateRequest({ body: v.submitOnboarding }), c.submitOnboarding);
 
 // Admin review queue. Mounted at /admin ahead of the main admin router, so
 // auth is per-route (a router-level authenticateAdmin would catch /admin/login).
