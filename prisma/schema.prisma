@@ -372,8 +372,16 @@ model BrandProfile {
   contactPerson      String?
   contactDesignation String?
   companySize        String?
+  language           String?
+  languages          String[]            @default([])
   instagramHandle    String?
+  instagramFollowers Int?
   youtubeHandle      String?
+  youtubeFollowers   Int?
+  snapchatHandle     String?
+  snapchatFollowers  Int?
+  twitterHandle      String?
+  twitterFollowers   Int?
   tagId              String?             @unique
   approvalStatus     BrandApprovalStatus @default(PENDING)
   rejectionReason    String?

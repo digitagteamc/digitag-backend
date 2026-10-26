@@ -66,7 +66,7 @@ async function createProfile(userId, data) {
   const tagId = await generateTagId({ role: ROLES.BRAND, model: 'brandProfile' });
   const profile = await prisma.brandProfile.create({ data: { ...clean, userId, tagId, approvalStatus: 'PENDING' } });
 
-  await ensureUserTag({ userId, role: ROLES.BRAND, location: clean.city }).catch(() => {});
+  await ensureUserTag({ userId, role: ROLES.BRAND, location: clean.city, language: clean.language }).catch(() => {});
   await userService.recomputeProfileCompletion(userId);
   return profile;
 }

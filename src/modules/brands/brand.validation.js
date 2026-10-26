@@ -21,8 +21,17 @@ const baseBrandFields = {
   contactPerson: Joi.string().trim().max(100).allow('', null).optional(),
   contactDesignation: Joi.string().trim().max(100).allow('', null).optional(),
   companySize: Joi.string().trim().max(50).allow('', null).optional(),
-  instagramHandle: Joi.string().trim().max(100).allow('', null).optional(),
-  youtubeHandle: Joi.string().trim().max(100).allow('', null).optional(),
+  language: Joi.string().trim().max(50).allow('', null).optional(),
+  languages: Joi.array().items(Joi.string().trim().max(50)).max(20).optional(),
+  // Complete Profile takes full profile links, not bare handles.
+  instagramHandle: Joi.string().trim().max(255).allow('', null).optional(),
+  instagramFollowers: Joi.number().integer().min(0).allow(null).optional(),
+  youtubeHandle: Joi.string().trim().max(255).allow('', null).optional(),
+  youtubeFollowers: Joi.number().integer().min(0).allow(null).optional(),
+  snapchatHandle: Joi.string().trim().max(255).allow('', null).optional(),
+  snapchatFollowers: Joi.number().integer().min(0).allow(null).optional(),
+  twitterHandle: Joi.string().trim().max(255).allow('', null).optional(),
+  twitterFollowers: Joi.number().integer().min(0).allow(null).optional(),
 };
 
 // Brand Registration: name + PAN required; everything else optional. The
