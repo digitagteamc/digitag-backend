@@ -4,6 +4,9 @@ const { parsePagination, buildPaginationMeta } = require('../../utils/pagination
 const s3UploadService = require('../../services/s3/s3Upload.service');
 const logger = require('../../utils/logger');
 
+// Celebrity.followerCount is a Postgres INTEGER.
+const MAX_FOLLOWER_COUNT = 2_147_483_647;
+
 const IMAGE_TYPES = {
   'image/png': { ext: '.png', test: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
   'image/jpeg': { ext: '.jpg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
@@ -123,8 +126,41 @@ async function getApplication(id) {
   return { ...rest, signatureUrl, photoUrl };
 }
 
+// Follower counts are stored as typed in the panel: 1200, 1,200, 185K, 2.4M.
+function parseAudienceCount(value) {
+  const [, digits, unit] = String(value ?? '').replace(/,/g, '').match(/^(\d+(?:\.\d+)?)\s*([kKmM]?)$/) || [];
+  if (!digits) return 0;
+  return Math.round(Number(digits) * ({ k: 1e3, m: 1e6 }[unit.toLowerCase()] ?? 1));
+}
+
+/** The Celebrity row the Brand Home "Celebrities" section lists for an approved
+ *  application. The photo becomes public here: it goes out to every brand. */
+function toCelebrity(application) {
+  const instagram = application.instagramAccounts ?? [];
+  const youtube = application.youtubeChannels ?? [];
+  const instagramFollowers = instagram.reduce((sum, a) => sum + parseAudienceCount(a.followers), 0);
+  const youtubeSubscribers = youtube.reduce((sum, c) => sum + parseAudienceCount(c.subscribers), 0);
+  return {
+    name: application.name,
+    photoUrl: application.photoKey ? s3UploadService.getPublicUrl(application.photoKey) : null,
+    role: application.partnerType,
+    followerCount: Math.min(instagramFollowers + youtubeSubscribers, MAX_FOLLOWER_COUNT),
+    isVerified: true,
+    profileUrl: instagram[0] ? `https://instagram.com/${instagram[0].handle}` : youtube[0]?.url ?? null,
+    instagramHandle: instagram[0]?.handle ?? null,
+    instagramFollowers: Math.min(instagramFollowers, MAX_FOLLOWER_COUNT),
+    youtubeUrl: youtube[0]?.url ?? null,
+    youtubeSubscribers: Math.min(youtubeSubscribers, MAX_FOLLOWER_COUNT),
+  };
+}
+
 async function reviewApplication(admin, id, decision, reason = null) {
-  const application = await prisma.celebrityApplication.findUnique({ where: { id }, select: { status: true, name: true } });
+  const application = await prisma.celebrityApplication.findUnique({
+    where: { id },
+    select: {
+      status: true, name: true, partnerType: true, photoKey: true, instagramAccounts: true, youtubeChannels: true,
+    },
+  });
   if (!application) throw ApiError.notFound('Application not found');
   if (application.status !== 'SUBMITTED') {
     throw ApiError.conflict(application.status === 'REQUESTED'
@@ -132,18 +168,22 @@ async function reviewApplication(admin, id, decision, reason = null) {
       : `This application is already ${application.status.toLowerCase()}`);
   }
   // Conditional on still being SUBMITTED so two admins can't both act on it.
-  const { count } = await prisma.celebrityApplication.updateMany({
-    where: { id, status: 'SUBMITTED' },
-    data: {
-      status: decision,
-      rejectionReason: decision === 'REJECTED' ? reason || null : null,
-      reviewedAt: new Date(),
-      reviewedBy: admin.name,
-    },
+  const count = await prisma.$transaction(async (tx) => {
+    const result = await tx.celebrityApplication.updateMany({
+      where: { id, status: 'SUBMITTED' },
+      data: {
+        status: decision,
+        rejectionReason: decision === 'REJECTED' ? reason || null : null,
+        reviewedAt: new Date(),
+        reviewedBy: admin.name,
+      },
+    });
+    if (result.count && decision === 'APPROVED') await tx.celebrity.create({ data: toCelebrity(application) });
+    return result.count;
   });
   if (count === 0) throw ApiError.conflict('This application was just reviewed by another admin');
   await logActivity(admin, decision === 'APPROVED' ? 'Approved celebrity application' : 'Rejected celebrity application', application.name);
   return getApplication(id);
 }
 
-module.exports = { submitOnboarding, listApplications, getApplication, reviewApplication };
+module.exports = { submitOnboarding, listApplications, getApplication, reviewApplication, toCelebrity };

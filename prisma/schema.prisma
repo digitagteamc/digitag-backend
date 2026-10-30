@@ -1091,6 +1091,12 @@ model Celebrity {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  // Shown on the mobile profile. Set from the application on approval.
+  instagramHandle    String?
+  instagramFollowers Int     @default(0)
+  youtubeUrl         String?
+  youtubeSubscribers Int     @default(0)
+
   @@index([isActive, followerCount])
 }
 
