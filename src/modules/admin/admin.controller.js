@@ -4,6 +4,7 @@ const MESSAGES = require('../../constants/messages');
 const STATUS = require('../../constants/statusCodes');
 const service = require('./admin.service');
 const uploadService = require('../uploads/upload.service');
+const creatorOnboardingService = require('../creatorOnboarding/creatorOnboarding.service');
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -294,6 +295,13 @@ const checkinEventRegistration = asyncHandler(async (req, res) => {
   return success(res, { message: data.alreadyCheckedIn ? 'Already checked in' : 'Checked in', data });
 });
 
+// ─── Creator onboarding form ────────────────────────────────────────────────
+
+const getCreatorOnboardings = asyncHandler(async (req, res) => {
+  const { items, meta } = await creatorOnboardingService.adminList(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
 module.exports = {
   login,
   verifyTwoFactorLogin,
@@ -346,4 +354,5 @@ module.exports = {
   getActivityLogs,
   getEventRegistrations,
   checkinEventRegistration,
+  getCreatorOnboardings,
 };

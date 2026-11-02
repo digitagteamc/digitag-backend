@@ -914,3 +914,41 @@ model Subscription {
 
   @@index([status])
 }
+
+// Creator onboarding form on the website (/creator-onboarding-frm1). A
+// telecaller confirms the creator over the phone, then sends them the link;
+// the creator fills personal + social details and signs the agreement there.
+// Not tied to a User row — the creator may not have the app yet. Every
+// submission is kept (no upsert) so each signed agreement stays on record.
+model CreatorOnboarding {
+  id                 String    @id @default(uuid())
+  fullName           String
+  mobileNumber       String
+  email              String
+  dateOfBirth        DateTime?
+  gender             String?
+  city               String
+  state              String
+  languages          String?
+  category           String
+  bio                String?
+  instagramUrl       String?
+  instagramFollowers Int?
+  youtubeUrl         String?
+  youtubeSubscribers Int?
+  facebookUrl        String?
+  twitterUrl         String?
+  linkedinUrl        String?
+  otherSocialUrl     String?
+  referredBy         String?
+  agreementVersion   String
+  signedName         String
+  signatureImage     String
+  agreedAt           DateTime
+  ipAddress          String?
+  userAgent          String?
+  createdAt          DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([mobileNumber])
+}

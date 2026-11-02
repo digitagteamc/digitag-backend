@@ -5,6 +5,7 @@ const { authenticateAdmin, requireSuperAdmin } = require('../../middlewares/admi
 const { validateRequest } = require('../../middlewares/validateMiddleware');
 const { uploadImage } = require('../../middlewares/uploadMiddleware');
 const v = require('./admin.validation');
+const creatorOnboardingSchemas = require('../creatorOnboarding/creatorOnboarding.validation');
 
 const router = Router();
 
@@ -156,5 +157,9 @@ router.get('/activity-logs', validateRequest({ query: v.listQuery }), controller
 router.get('/event-registrations', validateRequest({ query: v.eventRegistrationListQuery }), controller.getEventRegistrations);
 // POST /admin/event-registrations/checkin  { ticketCode } — staff QR scan check-in
 router.post('/event-registrations/checkin', validateRequest({ body: v.eventRegistrationCheckin }), controller.checkinEventRegistration);
+
+// Creator onboarding form submissions (website /creator-onboarding-frm1)
+// GET /admin/creator-onboarding?search=&page=&limit=
+router.get('/creator-onboarding', validateRequest({ query: creatorOnboardingSchemas.listQuery }), controller.getCreatorOnboardings);
 
 module.exports = router;
