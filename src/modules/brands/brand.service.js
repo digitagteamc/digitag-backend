@@ -121,6 +121,7 @@ const homeAdTypeSelect = { id: true, name: true, iconUrl: true, accentColor: tru
 const celebritySelect = {
   id: true, name: true, photoUrl: true, role: true, followerCount: true, isVerified: true, profileUrl: true,
   instagramHandle: true, instagramFollowers: true, youtubeUrl: true, youtubeSubscribers: true,
+  brandIntegrations: true,
 };
 
 /** Everything the Brand Home tab renders, in one call: Top YouTube Channels,

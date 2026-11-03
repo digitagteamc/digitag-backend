@@ -5,6 +5,7 @@ All notable changes to the DigiTag backend are documented here, one line per not
 ## Unreleased
 
 ### Fixed
+- Celebrity ad types never reached the mobile profile: approving an application didn't copy `brandIntegrations` to the `Celebrity` row, and `GET /celebrities` didn't return it. Run `scripts/backfill-approved-celebrities.js` once to fill in celebrities approved before this fix.
 - Duplicate-profile race condition: concurrent login/switch-role requests could each create a separate `User` row for the same `(accountId, role)`, leaving one real profile and one silent empty duplicate. Now atomic (create-then-catch-P2002), backed by a partial unique index on non-deleted rows.
 - Email, YouTube, and Facebook verification uniqueness was scoped per-role `userId` instead of per-account, so the same person switching between Creator/Freelancer roles was incorrectly blocked from reusing their own already-verified email/account under their other role.
 - Cross-role shared-field sync (name/email/profile picture) in `updateProfile` looked up the sibling profile using the wrong `userId`, so it silently never ran.

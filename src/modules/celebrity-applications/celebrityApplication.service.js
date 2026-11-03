@@ -151,6 +151,7 @@ function toCelebrity(application) {
     instagramFollowers: Math.min(instagramFollowers, MAX_FOLLOWER_COUNT),
     youtubeUrl: youtube[0]?.url ?? null,
     youtubeSubscribers: Math.min(youtubeSubscribers, MAX_FOLLOWER_COUNT),
+    brandIntegrations: application.brandIntegrations,
   };
 }
 
@@ -159,6 +160,7 @@ async function reviewApplication(admin, id, decision, reason = null) {
     where: { id },
     select: {
       status: true, name: true, partnerType: true, photoKey: true, instagramAccounts: true, youtubeChannels: true,
+      brandIntegrations: true,
     },
   });
   if (!application) throw ApiError.notFound('Application not found');

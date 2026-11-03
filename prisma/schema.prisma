@@ -1096,6 +1096,7 @@ model Celebrity {
   instagramFollowers Int     @default(0)
   youtubeUrl         String?
   youtubeSubscribers Int     @default(0)
+  brandIntegrations  String[] @default([])
 
   @@index([isActive, followerCount])
 }
