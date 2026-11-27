@@ -25,6 +25,7 @@ const notificationRoutes = require('../modules/notifications/notification.route'
 const waitlistRoutes = require('../modules/waitlist/waitlist.route');
 const eventRegistrationRoutes = require('../modules/eventRegistrations/eventRegistration.route');
 const creatorOnboardingRoutes = require('../modules/creatorOnboarding/creatorOnboarding.route');
+const adSurveyRoutes = require('../modules/adSurvey/adSurvey.route');
 const env = require('../config/env');
 const { optionalAuth } = require('../middlewares/authMiddleware');
 
@@ -70,5 +71,6 @@ router.use('/notifications', notificationRoutes);
 router.use('/waitlist', waitlistRoutes);
 router.use('/event-registrations', eventRegistrationRoutes);
 router.use('/creator-onboarding', creatorOnboardingRoutes);
+router.use('/ad-surveys', adSurveyRoutes);
 
 module.exports = router;
