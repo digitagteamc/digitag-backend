@@ -5,6 +5,7 @@ const STATUS = require('../../constants/statusCodes');
 const service = require('./admin.service');
 const uploadService = require('../uploads/upload.service');
 const creatorOnboardingService = require('../creatorOnboarding/creatorOnboarding.service');
+const adSurveyService = require('../adSurvey/adSurvey.service');
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -302,6 +303,21 @@ const getCreatorOnboardings = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
 });
 
+// ─── Ad lead surveys ────────────────────────────────────────────────────────
+
+const getAdSurveyResponses = asyncHandler(async (req, res) => {
+  const { items, meta } = await adSurveyService.adminList(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const exportAdSurveyCsv = asyncHandler(async (req, res) => {
+  const csv = await adSurveyService.exportCsv(req.query);
+  const name = `${req.query.survey || 'ad-survey'}-${new Date().toISOString().slice(0, 10)}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+  res.send(csv);
+});
+
 module.exports = {
   login,
   verifyTwoFactorLogin,
@@ -355,4 +371,6 @@ module.exports = {
   getEventRegistrations,
   checkinEventRegistration,
   getCreatorOnboardings,
+  getAdSurveyResponses,
+  exportAdSurveyCsv,
 };

@@ -952,3 +952,38 @@ model CreatorOnboarding {
   @@index([createdAt])
   @@index([mobileNumber])
 }
+
+// Chat-style lead survey on the website (/harsha-ad-survey), linked from paid
+// ads. `survey` is the page slug so the same table can back future ad
+// surveys. Not tied to a User row — most respondents don't have the app yet.
+model AdSurveyResponse {
+  id               String   @id @default(uuid())
+  survey           String
+  fullName         String
+  mobileNumber     String
+  email            String
+  city             String
+  pageName         String
+  profileLink      String
+  creatorType      String
+  platforms        String[]
+  contentType      String
+  services         String[]
+  videosPerMonth   String?
+  languages        String[]
+  serviceDuration  String
+  monthlyBudget    String
+  startTimeline    String
+  references       String?
+  additionalNotes  String?
+  utmSource        String?
+  utmMedium        String?
+  utmCampaign      String?
+  ref              String?
+  ipAddress        String?
+  userAgent        String?
+  createdAt        DateTime @default(now())
+
+  @@index([survey, createdAt])
+  @@index([mobileNumber])
+}

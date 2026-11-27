@@ -6,6 +6,7 @@ const { validateRequest } = require('../../middlewares/validateMiddleware');
 const { uploadImage } = require('../../middlewares/uploadMiddleware');
 const v = require('./admin.validation');
 const creatorOnboardingSchemas = require('../creatorOnboarding/creatorOnboarding.validation');
+const adSurveySchemas = require('../adSurvey/adSurvey.validation');
 
 const router = Router();
 
@@ -161,5 +162,11 @@ router.post('/event-registrations/checkin', validateRequest({ body: v.eventRegis
 // Creator onboarding form submissions (website /creator-onboarding-frm1)
 // GET /admin/creator-onboarding?search=&page=&limit=
 router.get('/creator-onboarding', validateRequest({ query: creatorOnboardingSchemas.listQuery }), controller.getCreatorOnboardings);
+
+// Ad lead surveys (website /harsha-ad-survey)
+// GET /admin/ad-surveys?survey=&search=&page=&limit=
+router.get('/ad-surveys', validateRequest({ query: adSurveySchemas.listQuery }), controller.getAdSurveyResponses);
+// GET /admin/ad-surveys/export.csv?survey=&search= — Super Admin only (PII export, same as users)
+router.get('/ad-surveys/export.csv', requireSuperAdmin, validateRequest({ query: adSurveySchemas.exportQuery }), controller.exportAdSurveyCsv);
 
 module.exports = router;
