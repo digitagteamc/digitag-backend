@@ -20,6 +20,8 @@ const otpLimiter = rateLimit({
 router.post('/send-otp', otpLimiter, validate(schemas.sendOtpSchema), controller.sendOtp);
 router.post('/verify-otp', otpLimiter, validate(schemas.verifyOtpSchema), controller.verifyOtp);
 router.post('/verify-firebase', validate(schemas.verifyFirebaseSchema), controller.verifyFirebase);
+// Website sign-in: existing accounts only, never creates one (see auth.service#webLoginWithFirebase).
+router.post('/web-login', otpLimiter, validate(schemas.webLoginSchema), controller.webLogin);
 router.post('/refresh-token', validate(schemas.refreshTokenSchema), controller.refreshToken);
 router.post('/logout', validate(schemas.logoutSchema), controller.logout);
 router.get('/me', authenticate, controller.me);

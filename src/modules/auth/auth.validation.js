@@ -35,8 +35,12 @@ const verifyFirebaseSchema = Joi.object({
   categoryId: uuid.optional(),
 });
 
+const webLoginSchema = Joi.object({
+  idToken: Joi.string().max(5000).required(),
+});
+
 const selectProfileSchema = Joi.object({
   profileId: uuid.required(),
 });
 
-module.exports = { sendOtpSchema, verifyOtpSchema, verifyFirebaseSchema, refreshTokenSchema, logoutSchema, switchRoleSchema, selectProfileSchema };
+module.exports = { webLoginSchema, sendOtpSchema, verifyOtpSchema, verifyFirebaseSchema, refreshTokenSchema, logoutSchema, switchRoleSchema, selectProfileSchema };
