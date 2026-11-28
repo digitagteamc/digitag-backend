@@ -4,6 +4,7 @@ const STATUS = require('../../constants/statusCodes');
 const logger = require('../../utils/logger');
 const service = require('./subscription.service');
 const appleService = require('./appleSubscription.service');
+const webStoreService = require('../webStore/webStore.service');
 
 const create = asyncHandler(async (req, res) => {
   const data = await service.createSubscription(req.user);
@@ -23,7 +24,10 @@ const webhook = asyncHandler(async (req, res) => {
   if (!valid) throw ApiError.unauthorized('Invalid webhook signature');
 
   try {
-    await service.handleWebhookEvent(req.body);
+    // Website package/service purchases (one-time orders) first; anything
+    // else is the app's Premium subscription.
+    const handled = await webStoreService.handleRazorpayEvent(req.body);
+    if (!handled) await service.handleWebhookEvent(req.body);
   } catch (err) {
     logger.error('[razorpay webhook] handling failed', { err: err.message });
   }

@@ -32,6 +32,11 @@ const verifyFirebase = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.AUTH.LOGIN_SUCCESS, data: result });
 });
 
+const webLogin = asyncHandler(async (req, res) => {
+  const result = await authService.webLoginWithFirebase({ idToken: req.body.idToken, context: requestContext(req) });
+  return success(res, { message: MESSAGES.AUTH.LOGIN_SUCCESS, data: result });
+});
+
 const refreshToken = asyncHandler(async (req, res) => {
   const tokens = await authService.refreshTokens(req.body.refreshToken, requestContext(req));
   return success(res, { message: MESSAGES.AUTH.TOKEN_REFRESHED, data: { tokens } });
@@ -67,4 +72,4 @@ const selectProfile = asyncHandler(async (req, res) => {
   return success(res, { message: MESSAGES.AUTH.LOGIN_SUCCESS, data: result });
 });
 
-module.exports = { sendOtp, verifyOtp, verifyFirebase, refreshToken, logout, me, switchRole, deleteAccount, getProfiles, selectProfile };
+module.exports = { sendOtp, verifyOtp, verifyFirebase, webLogin, refreshToken, logout, me, switchRole, deleteAccount, getProfiles, selectProfile };

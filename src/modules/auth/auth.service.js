@@ -315,6 +315,55 @@ async function verifyFirebaseToken({ idToken, role, categoryId, context = {} }) 
     };
 }
 
+/**
+ * Website sign-in (e.g. buying a package on /subscription): same Firebase
+ * phone verification as the app, but only for numbers that already have a
+ * Digitag account. Unlike verifyFirebaseToken it never creates an account or
+ * profile, so the website can't leave half-finished signups behind.
+ */
+async function webLoginWithFirebase({ idToken, context = {} }) {
+    if (!admin.apps.length) {
+        throw ApiError.internal('Firebase Admin is not configured');
+    }
+    let decodedToken;
+    try {
+        decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch {
+        throw ApiError.unauthorized('Invalid Firebase token');
+    }
+    const phone = decodedToken.phone_number;
+    if (!phone) throw ApiError.badRequest('Firebase token does not contain a phone number');
+    const number = phone.startsWith('+91') ? phone.slice(3) : phone;
+
+    const account = await prisma.account.findUnique({
+        where: { mobileNumber: number },
+        include: { users: { include: { creatorProfile: true, freelancerProfile: true } } },
+    });
+    const candidates = account
+        ? account.users
+        : await prisma.user.findMany({
+            where: { mobileNumber: number },
+            include: { creatorProfile: true, freelancerProfile: true },
+        });
+    if (candidates.some((u) => u.status === 'SUSPENDED')) {
+        throw ApiError.forbidden(MESSAGES.AUTH.ACCOUNT_SUSPENDED, { code: 'ACCOUNT_SUSPENDED' });
+    }
+    const live = candidates.filter((u) => u.status !== 'DELETED');
+    if (!live.length) {
+        throw ApiError.badRequest('No Digitag account for this number yet. Download the app to sign up first.', { code: 'NO_ACCOUNT' });
+    }
+    // Packages are for creators, so prefer the creator profile when there is one.
+    const user = live.find((u) => u.role === ROLES.CREATOR) || live[0];
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+
+    const { accessToken, refreshToken } = await tokenService.issueTokens(user, context);
+    const profile = user.creatorProfile || user.freelancerProfile;
+    return {
+        user: { id: user.id, role: user.role, mobileNumber: user.mobileNumber, name: profile?.name || null, email: profile?.email || null },
+        tokens: { accessToken, refreshToken },
+    };
+}
+
 async function refreshTokens(refreshToken, context = {}) {
     try {
         return await tokenService.rotateRefreshToken(refreshToken, context);
@@ -597,4 +646,4 @@ function sanitizeUser(user) {
     return { id, mobileNumber, countryCode, role, categoryId, isVerified, isProfileCompleted, isPremium, status, createdAt, creatorProfile, freelancerProfile };
 }
 
-module.exports = { initiateOtp, completeOtp, verifyFirebaseToken, refreshTokens, logout, getMe, switchRole, deleteAccount, getProfiles, selectProfile };
+module.exports = { initiateOtp, completeOtp, verifyFirebaseToken, webLoginWithFirebase, refreshTokens, logout, getMe, switchRole, deleteAccount, getProfiles, selectProfile };

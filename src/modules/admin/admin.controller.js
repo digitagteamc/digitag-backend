@@ -6,6 +6,7 @@ const service = require('./admin.service');
 const uploadService = require('../uploads/upload.service');
 const creatorOnboardingService = require('../creatorOnboarding/creatorOnboarding.service');
 const adSurveyService = require('../adSurvey/adSurvey.service');
+const webStoreService = require('../webStore/webStore.service');
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -318,6 +319,20 @@ const exportAdSurveyCsv = asyncHandler(async (req, res) => {
   res.send(csv);
 });
 
+// ─── Website purchases ──────────────────────────────────────────────────────
+
+const getWebPurchases = asyncHandler(async (req, res) => {
+  const { items, meta } = await webStoreService.adminList(req.query);
+  return success(res, { message: MESSAGES.GENERIC.FETCHED, data: items, meta });
+});
+
+const exportWebPurchasesCsv = asyncHandler(async (req, res) => {
+  const csv = await webStoreService.adminExportCsv(req.query);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="digitag-purchases-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(csv);
+});
+
 module.exports = {
   login,
   verifyTwoFactorLogin,
@@ -373,4 +388,6 @@ module.exports = {
   getCreatorOnboardings,
   getAdSurveyResponses,
   exportAdSurveyCsv,
+  getWebPurchases,
+  exportWebPurchasesCsv,
 };

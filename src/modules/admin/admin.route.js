@@ -7,6 +7,7 @@ const { uploadImage } = require('../../middlewares/uploadMiddleware');
 const v = require('./admin.validation');
 const creatorOnboardingSchemas = require('../creatorOnboarding/creatorOnboarding.validation');
 const adSurveySchemas = require('../adSurvey/adSurvey.validation');
+const webStoreSchemas = require('../webStore/webStore.validation');
 
 const router = Router();
 
@@ -168,5 +169,11 @@ router.get('/creator-onboarding', validateRequest({ query: creatorOnboardingSche
 router.get('/ad-surveys', validateRequest({ query: adSurveySchemas.listQuery }), controller.getAdSurveyResponses);
 // GET /admin/ad-surveys/export.csv?survey=&search= — Super Admin only (PII export, same as users)
 router.get('/ad-surveys/export.csv', requireSuperAdmin, validateRequest({ query: adSurveySchemas.exportQuery }), controller.exportAdSurveyCsv);
+
+// Website package / service purchases (Razorpay one-time orders, /subscription page)
+// GET /admin/web-purchases?status=&itemType=&search=&page=&limit=
+router.get('/web-purchases', validateRequest({ query: webStoreSchemas.adminListQuery }), controller.getWebPurchases);
+// GET /admin/web-purchases/export.csv — Super Admin only (customer PII + revenue)
+router.get('/web-purchases/export.csv', requireSuperAdmin, validateRequest({ query: webStoreSchemas.adminExportQuery }), controller.exportWebPurchasesCsv);
 
 module.exports = router;

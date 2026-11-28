@@ -194,6 +194,7 @@ model User {
   blockedBy Block[] @relation("BlockBlocked")
 
   subscription           Subscription?
+  webPurchases           WebPurchase[]
   instagramVerifications InstagramVerification[]
   socialVerifications    SocialVerification[]
   emailVerifications     EmailVerification[]
@@ -986,4 +987,55 @@ model AdSurveyResponse {
 
   @@index([survey, createdAt])
   @@index([mobileNumber])
+}
+
+// One-time Razorpay purchases from the website's /subscription page: the four
+// monthly creator packages (30 days each, paid upfront, renewed by paying
+// again) and the single "additional services". Separate from Subscription,
+// which is the app's auto-renewing Premium plan. Amounts are in paise and
+// snapshotted at purchase time so later price changes never rewrite history.
+model WebPurchase {
+  id                String            @id @default(uuid())
+  userId            String
+  itemType          WebPurchaseType
+  itemKey           String
+  itemName          String
+  baseAmount        Int
+  gstAmount         Int
+  totalAmount       Int
+  currency          String            @default("INR")
+  status            WebPurchaseStatus @default(CREATED)
+  razorpayOrderId   String            @unique
+  razorpayPaymentId String?           @unique
+  // Packages only: the 30 days this payment covers. Buying again while a
+  // package is running starts the new period when the current one ends.
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  paidAt            DateTime?
+  // Billing details for the GST invoice (optional, for businesses).
+  gstin             String?
+  businessName      String?
+  // Contact snapshot at purchase time, so admin sees who paid even if the
+  // profile changes later.
+  customerName      String?
+  customerPhone     String
+  customerEmail     String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+}
+
+enum WebPurchaseType {
+  PACKAGE
+  SERVICE
+}
+
+enum WebPurchaseStatus {
+  CREATED
+  PAID
+  FAILED
 }
